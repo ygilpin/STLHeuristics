@@ -41,6 +41,7 @@ class STLpredicate:
         self.myRho(x, t)
         # Now apply conjuction and disjunction
         if self.other:
+            print("getting other robustness")
             rho_o = self.other.Rho(x,t);
             if self.cd == 'c':
                 if self.rhoVal != "Nan" and rho_o != "Nan":
@@ -52,7 +53,9 @@ class STLpredicate:
                 else:
                     return "NaN"
             elif self.cd == 'd':
+                print("Adding robustness")
                 if self.rhoVal != "Nan" and rho_o != "Nan":
+                    print("Maximizing robustness")
                     return max(self.rhoVal, rho_o)
                 elif self.rhoVal == "Nan" and rho_o != "Nan":
                     return rho_o
@@ -69,35 +72,50 @@ class STLpredicate:
     def __mul__(self, other):
         return STLpredicate(self.t1, self.t2, self.ae, self.A, self.b, 'c', other)
 
+    def arect(t1,t2,ae,x1,x2,y1,y2):
+        # First the equations for the lines are needed
+        # Top line
+        p1 = STLpredicate(t1, t2, ae, np.array([0, -1]), -y2)
+        # Bottom line
+        p2 = STLpredicate(t1,t2,ae,np.array([0, -1]), y1)
+        # Left line
+        p3 = STLpredicate(t1,t2,ae,np.array([1, 0]), x1)
+        # Right line
+        p4 = STLpredicate(t1,t2,ae,np.array([-1, 0]), -x2)
+        return (p1 + (p2 + (p3 + p4)))
+
 t1 = 0
-t2 = 14 
+t2 = 4  
 A1 = np.array([1, 2])
 b1 = 5
 A2 = np.array([3, -5])
 b2 = 3
-t = np.linspace(t1, t2, 15)
-x1 = np.vstack((t,t))
-y = (t**2) + 3
-x2 = np.vstack((t,y))
-p1 = STLpredicate(t1,t2,'a',A1,b1)
-p2 = STLpredicate(t1,t2,'e',A1,b1)
-p3 = STLpredicate(t1,t2,'a',A2,b2)
-p4 = p1 + p2
-p5 = p3*p4
-print(p1.Rho(x1,2))
-print(p2.Rho(x1,2))
-print(p3.Rho(x1,2))
-print(p4.Rho(x1,2))
-print(p5.Rho(x1,2))
-"""print("x1 is")
-print(x1, '\n')
-print("x2 is ")
-print(x2, '\n')
+t = np.linspace(t1, t2, t2 + 1)
+x = np.vstack((t,t))
 
-print("Testing the robustness of A x1")
-for t in range(t1,t2+1):
-    print(p1.Rho(x1,t))
-print("\nTesting the robustness of A  x2")
+x1 = 1
+x2 = 3
+y1 = 1
+y2 = 3
+ae = 'a'
+p = STLpredicate.arect(t1,t2,'a', x1, x2, y1, y2) 
+
+p1 = STLpredicate(t1, t2, ae, np.array([0, -1]), -y2)
+        # Bottom line
+p2 = STLpredicate(t1,t2,ae,np.array([0, -1]), y1)
+        # Left line
+p3 = STLpredicate(t1,t2,ae,np.array([1, 0]), x1)
+        # Right line
+p4 = STLpredicate(t1,t2,ae,np.array([-1, 0]), -x2)
+print("Testing the robustness of rectangle")
+for time in range(t1,t2+1):
+    print(x[:,time])
+    print('p1', p1.Rho(x,time))
+    print('p2', p2.Rho(x,time))
+    print('p3', p3.Rho(x,time))
+    print('p4', p4.Rho(x,time))
+    print(x[:,time], p.Rho(x,time))
+"""print("\nTesting the robustness of A  x2")
 for t in range(t1,t2+1):
     print(p1.Rho(x2,t))
 
