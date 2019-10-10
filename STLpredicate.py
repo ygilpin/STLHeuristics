@@ -76,21 +76,21 @@ class STLpredicate:
         #print("Conjunction between two predicates")
         return STLpredicate(cdn='c', left=self, right=other)
 
-    def arect(t1,t2,ae,x1,x2,y1,y2):
+    def rect(t1,t2,ae,x1,x2,y1,y2):
         # First the equations for the lines are needed
         # Top line
-        p1 = STLpredicate(t1, t2, ae, np.array([0, -1]), -y2)
+        p1 = STLpredicate(t1, t2, ae, np.array([0, 1]), y2)
         # Bottom line
-        p2 = STLpredicate(t1,t2,ae,np.array([0, -1]), y1)
+        p2 = STLpredicate(t1,t2,ae,np.array([0, -1]), -y1)
         # Left line
-        p3 = STLpredicate(t1,t2,ae,np.array([1, 0]), x1)
+        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0]), -x1)
         # Right line
-        p4 = STLpredicate(t1,t2,ae,np.array([-1, 0]), -x2)
-        return p1 + p2 + p3 + p4
+        p4 = STLpredicate(t1,t2,ae,np.array([1, 0]), x2)
+        return p1 * p2 * p3 * p4
 
 # Available Times
 t1 = 0
-t2 = 0  
+t2 = 4  
 
 # Available lines
 A1 = np.array([1, 0])
@@ -101,26 +101,11 @@ A3 = np.array([0, -1])
 b3 = -3
 
 # Available Test points
-x1 = np.array([[1], [1]])
-x2 = np.array([[2], [1]])
-x3 = np.array([[4], [1]])
+x1 = np.array([[0,1,2,3, 4], [10,1,2,3,4]])
 
 # Some predicates based on these points
-p1 = STLpredicate(t1, t2, 'e', A1, b1)
-p2 = STLpredicate(t1, t2, 'e', A2, b2)
-p3 = STLpredicate(t1, t2, 'e', A3, b3)
-p4 = p1 + p2 + p3
-p5 = p1*p2*p3
-p6 = p1*(p2 + p3)
-p7 = p1*(p1 + p3)
-p8 = ~p7 * p3
+p1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
 
 # Lets check the robustness
-print("p1 ", p1.Rho(x1,0))
-print("p2 ", p2.Rho(x1,0))
-print("p3 ", p3.Rho(x1,0))
-print("p4 ", p4.Rho(x1,0))
-print("p5 ", p5.Rho(x1,0))
-print("p6 ", p6.Rho(x1,0))
-print("p7 ", p7.Rho(x1,0))
-print("p8 ", p8.Rho(x1, 0))
+for t in range(t1, t2 + 1):
+    print("p1 ", p1.Rho(x1,t))
