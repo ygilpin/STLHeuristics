@@ -27,16 +27,15 @@ class STLpredicate:
                     if (self.b - self.A @ x[:,k]) > 0:
                         sat = True
                         break
-                deltax = self.b - self.A @ x[:,t]
-                deltat = self.t2 -t
+                deltax = abs(self.b - self.A @ x[:,t])
+                deltat = abs(1 + self.t2 -t)
+                #print(deltax)
+                #print(deltat)
                 if sat:
-                    rhoVal = abs(deltat)/(abs(deltax)+1)
+                    rhoVal = (deltat)/((deltax)+1)
                 else:
-                    rhoVal = -abs(deltax)/(abs(deltat)+1)
-            if self.cdn == 'n':
-                rhoVal = -rhoVal
-
-        print("myRho called", rhoVal)
+                    rhoVal = -(deltax)/((deltat)+1)
+        #print("myRho called", rhoVal)
         return rhoVal
 
     def Rho(self, x,t):
@@ -57,20 +56,24 @@ class STLpredicate:
             elif leftRho != 'Nan' and rightRho == 'Nan':
                 return leftRho 
         if self.left:
-            return left.Rho(x,t)
+            if self.cdn == 'n':
+                return -self.left.Rho(x,t)
+            return self.left.Rho(x,t)
         if self.right:
-            return right.Rho(x,t)
+            if self.cdn == 'n':
+                return -self.right.Rho(x,t)
+            return self.right.Rho(x,t)
         return self.myRho(x,t)
 
     def __invert__(self):
-        return STLpredicate(self.t1, self.t2, self.ae, self.A, self.b, 'n', 0)
+        return STLpredicate(cdn='n', left=self)
 
     def __add__(self, other):
-        print("Disjunction between two predicates")
+        #print("Disjunction between two predicates")
         return STLpredicate(cdn='d', left=self, right=other)
 
     def __mul__(self, other):
-        print("Conjunction between two predicates")
+        #print("Conjunction between two predicates")
         return STLpredicate(cdn='c', left=self, right=other)
 
     def arect(t1,t2,ae,x1,x2,y1,y2):
@@ -85,17 +88,39 @@ class STLpredicate:
         p4 = STLpredicate(t1,t2,ae,np.array([-1, 0]), -x2)
         return p1 + p2 + p3 + p4
 
+# Available Times
 t1 = 0
-t2 = 4  
-time = 2
-A1 = np.array([1, 2])
-b1 = 5
-A2 = np.array([3, -5])
-b2 = 3
-t = np.linspace(t1, t2, t2 + 1)
-x = np.vstack((t,2*t))
+t2 = 0  
 
-p = STLpredicate.arect(t1, t2, 'a', 1, 3, 1, 3)
-for time in range(t1,t2+1):
-    print(x[:,time])
-    print(x[:,time], p.Rho(x,time))
+# Available lines
+A1 = np.array([1, 0])
+b1 = 3
+A2 = np.array([0, 1])
+b2 = 3
+A3 = np.array([0, -1])
+b3 = -3
+
+# Available Test points
+x1 = np.array([[1], [1]])
+x2 = np.array([[2], [1]])
+x3 = np.array([[4], [1]])
+
+# Some predicates based on these points
+p1 = STLpredicate(t1, t2, 'e', A1, b1)
+p2 = STLpredicate(t1, t2, 'e', A2, b2)
+p3 = STLpredicate(t1, t2, 'e', A3, b3)
+p4 = p1 + p2 + p3
+p5 = p1*p2*p3
+p6 = p1*(p2 + p3)
+p7 = p1*(p1 + p3)
+p8 = ~p7 * p3
+
+# Lets check the robustness
+print("p1 ", p1.Rho(x1,0))
+print("p2 ", p2.Rho(x1,0))
+print("p3 ", p3.Rho(x1,0))
+print("p4 ", p4.Rho(x1,0))
+print("p5 ", p5.Rho(x1,0))
+print("p6 ", p6.Rho(x1,0))
+print("p7 ", p7.Rho(x1,0))
+print("p8 ", p8.Rho(x1, 0))
