@@ -131,6 +131,17 @@ class STLpredicate:
         x_start = np.array([[x0], [y0]])
         x = np.concatenate((x_start, x_tail), axis=1)
         return x
+    
+    def plant(self, pos):
+        # This plant simply computes the speed in
+        x = np.concatenate((pos, np.zeros(1, t2-t1)), axis=0)
+        print x
+        d = 0
+        for t in range(t1,t2):
+            deltax = x[:,t] - x[:,t+1] 
+            d += np.linalg.norm(deltax)
+        return d
+
 
 
 if __name__ == '__main__':
