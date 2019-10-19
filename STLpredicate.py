@@ -38,7 +38,7 @@ class STLpredicate:
         #print("myRho called", rhoVal)
         return rhoVal
 
-    def Rho(self, x,t):
+    def Rho(self, x, t):
         #print("Robustness function called")
         # Force the calcluation of left and right 
         leftRho = 'Nan'
@@ -66,17 +66,19 @@ class STLpredicate:
         return self.myRho(x,t)
 
     def robustness(self,x):
+        traj = self.plant(x)
         p = []
         for t in range(self.t1, self.t2 + 1):
-            p.append(self.Rho(x,t))
+            p.append(self.Rho(traj,t))
         return min(p)
 
     def robustnessflt(self,xflt):
         # Same robustness, but flattened version
         x = np.reshape(xflt, (2,-1)) 
+        traj = self.plant(x)
         p = []
         for t in range(self.t1, self.t2 + 1):
-            p.append(self.Rho(x,t))
+            p.append(self.Rho(traj,t))
         return min(p)
 
     def __invert__(self):
@@ -93,13 +95,13 @@ class STLpredicate:
     def rect(t1,t2,ae,x1,x2,y1,y2):
         # First the equations for the lines are needed
         # Top line
-        p1 = STLpredicate(t1, t2, ae, np.array([0, 1]), y2)
+        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0]), y2)
         # Bottom line
-        p2 = STLpredicate(t1,t2,ae,np.array([0, -1]), -y1)
+        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0]), -y1)
         # Left line
-        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0]), -x1) 
+        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0]), -x1) 
         # Right line
-        p4 = STLpredicate(t1,t2,ae,np.array([1, 0]), x2)
+        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0]), x2)
         return p1 * p2 * p3 * p4
 
     def cost(self, xflt):
@@ -133,14 +135,14 @@ class STLpredicate:
         return x
     
     def plant(self, pos):
-        # This plant simply computes the speed in
-        x = np.concatenate((pos, np.zeros(1, t2-t1)), axis=0)
-        print x
+        # This plant simply computes the speed
+        # First I need to grow the signal space
+        x = np.concatenate((pos, np.zeros((1, t2-t1+1))), axis=0)
         d = 0
-        for t in range(t1,t2):
-            deltax = x[:,t] - x[:,t+1] 
-            d += np.linalg.norm(deltax)
-        return d
+        for t in range(t1+1,t2+1):
+            deltax = x[:,t] - x[:,t-1] 
+            x[2,t] = np.linalg.norm(deltax)
+        return x
 
 
 
@@ -153,7 +155,8 @@ if __name__ == '__main__':
     # Some predicates based on these points
     r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
     r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9)
-    p = r1*r2
+    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 1)
+    p = r1*r2*r3
 
     # Generate a guess trajectory 
     x1 = p.x_guess(0,0)
