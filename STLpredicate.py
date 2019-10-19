@@ -32,9 +32,9 @@ class STLpredicate:
                 #print(deltax)
                 #print(deltat)
                 if sat:
-                    rhoVal = (deltat)/((deltax)+1)
+                    rhoVal = (deltat)/((deltax)+0.15)
                 else:
-                    rhoVal = -(deltax)/((deltat)+1)
+                    rhoVal = -(deltax)/((deltat)+0.15)
         #print("myRho called", rhoVal)
         return rhoVal
 
@@ -65,16 +65,30 @@ class STLpredicate:
             return self.right.Rho(x,t)
         return self.myRho(x,t)
 
+    def robustness(self,x):
+        p = []
+        for t in range(self.t1, self.t2 + 1):
+            p.append(self.Rho(x,t))
+        return min(p)
+
+    def robustnessflt(self,xflt):
+        # Same robustness, but flattened version
+        x = np.reshape(xflt, (2,-1)) 
+        p = []
+        for t in range(self.t1, self.t2 + 1):
+            p.append(self.Rho(x,t))
+        return min(p)
+
     def __invert__(self):
-        return STLpredicate(cdn='n', left=self)
+        return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self)
 
     def __add__(self, other):
         #print("Disjunction between two predicates")
-        return STLpredicate(cdn='d', left=self, right=other)
+        return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='d', left=self, right=other)
 
     def __mul__(self, other):
         #print("Conjunction between two predicates")
-        return STLpredicate(cdn='c', left=self, right=other)
+        return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='c', left=self, right=other)
 
     def rect(t1,t2,ae,x1,x2,y1,y2):
         # First the equations for the lines are needed
@@ -83,29 +97,66 @@ class STLpredicate:
         # Bottom line
         p2 = STLpredicate(t1,t2,ae,np.array([0, -1]), -y1)
         # Left line
-        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0]), -x1)
+        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0]), -x1) 
         # Right line
         p4 = STLpredicate(t1,t2,ae,np.array([1, 0]), x2)
         return p1 * p2 * p3 * p4
 
-# Available Times
-t1 = 0
-t2 = 4  
+    def cost(self, xflt):
+        x = np.reshape(xflt, (2, -1))
+        p = self.robustness(x)
+        d = 0
+        for t in range(t1,t2):
+            deltax = x[:,t] - x[:,t+1] 
+            d += np.linalg.norm(deltax)
+        return 1*d - p*(self.t2 - self.t1 + 1)
+    
+    def bounds(self, x0, y0):
+        # Returns a tuple for the bound constraints
+        # The first point is fixed. 
+        bnds = []
+        for i in range(1,3):
+            if i == 1:
+                bnds.append((x0,x0))
+            elif i == 2:
+                bnds.append((y0, y0))
+            for j in range(t1+1,t2+1):
+                bnds.append((None,None))
+        return bnds 
 
-# Available lines
-A1 = np.array([1, 0])
-b1 = 3
-A2 = np.array([0, 1])
-b2 = 3
-A3 = np.array([0, -1])
-b3 = -3
+    def x_guess(self, x0, y0):
+        # The intial point is x0, y0
+        # Random trajectory after that
+        x_tail = 9*np.random.rand(2, self.t2 - self.t1)
+        x_start = np.array([[x0], [y0]])
+        x = np.concatenate((x_start, x_tail), axis=1)
+        return x
 
-# Available Test points
-x1 = np.array([[0,1,2,3, 4], [10,1,2,3,4]])
 
-# Some predicates based on these points
-p1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
+if __name__ == '__main__':
+    from scipy.optimize import minimize
+    # Available Times
+    t1 = 0
+    t2 = 14 
 
-# Lets check the robustness
-for t in range(t1, t2 + 1):
-    print("p1 ", p1.Rho(x1,t))
+    # Some predicates based on these points
+    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
+    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9)
+    p = r1*r2
+
+    # Generate a guess trajectory 
+    x1 = p.x_guess(0,0)
+    guess = x1.flatten()
+    print('Initial Guess: ')
+    print(x1)
+    print('Initial Guess Robustness: ', p.robustness(x1))
+    print('Initial cost: ', p.cost(x1))
+    # Now time to run optimization
+    bnd = p.bounds(0, 0)
+    sln = minimize(p.cost, guess, method='TNC', bounds=bnd, tol=1e-6, options =
+            { 'disp':True
+                })
+    print(np.reshape(sln.x, (2,-1)))
+    print('Final Robustness: ', p.robustnessflt(sln.x))
+    print('Final cost: ', p.cost(sln.x))
+
