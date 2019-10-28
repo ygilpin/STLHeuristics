@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import numpy as np
+from mpl_toolkits import mplot3d
+import matplotlib.pyplot as plt
 
 class STLpredicate:
     def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0):
@@ -23,7 +25,7 @@ class STLpredicate:
             else:
                 # Check if there is satisfaction at any point
                 sat = False
-                for k in range(self.t1,self.t2+1):
+                for k in range(0, x.shape[1]):
                     if (self.b - self.A @ x[:,k]) > 0:
                         sat = True
                         break
@@ -32,9 +34,9 @@ class STLpredicate:
                 #print(deltax)
                 #print(deltat)
                 if sat:
-                    rhoVal = (deltat)/((deltax)+0.15)
+                    rhoVal = (deltat)/((deltax)+0.25)
                 else:
-                    rhoVal = -(deltax)/((deltat)+0.15)
+                    rhoVal = -(deltax)/((deltat)+0.25)
         #print("myRho called", rhoVal)
         return rhoVal
 
@@ -68,7 +70,7 @@ class STLpredicate:
     def robustness(self,x):
         traj = self.plant(x)
         p = []
-        for t in range(self.t1, self.t2 + 1):
+        for t in range(0, x.shape[1]):
             p.append(self.Rho(traj,t))
         return min(p)
 
@@ -77,7 +79,7 @@ class STLpredicate:
         x = np.reshape(xflt, (2,-1)) 
         traj = self.plant(x)
         p = []
-        for t in range(self.t1, self.t2 + 1):
+        for t in range(0, x.shape[1]):
             p.append(self.Rho(traj,t))
         return min(p)
 
@@ -108,12 +110,12 @@ class STLpredicate:
         x = np.reshape(xflt, (2, -1))
         p = self.robustness(x)
         d = 0
-        for t in range(t1,t2):
+        for t in range(0,x.shape[1] -1):
             deltax = x[:,t] - x[:,t+1] 
             d += np.linalg.norm(deltax)
-        return 1*d - p*(self.t2 - self.t1 + 1)
+        return 0*d - p*(self.t2 - self.t1 + 1)
     
-    def bounds(self, x0, y0):
+    def bounds(self, x0, y0, length):
         # Returns a tuple for the bound constraints
         # The first point is fixed. 
         bnds = []
@@ -122,14 +124,14 @@ class STLpredicate:
                 bnds.append((x0,x0))
             elif i == 2:
                 bnds.append((y0, y0))
-            for j in range(t1+1,t2+1):
+            for j in range(0, length):
                 bnds.append((None,None))
         return bnds 
 
-    def x_guess(self, x0, y0):
+    def x_guess(self, x0, y0, length):
         # The intial point is x0, y0
         # Random trajectory after that
-        x_tail = 9*np.random.rand(2, self.t2 - self.t1)
+        x_tail = 9*np.random.rand(2, length)
         x_start = np.array([[x0], [y0]])
         x = np.concatenate((x_start, x_tail), axis=1)
         return x
@@ -137,12 +139,46 @@ class STLpredicate:
     def plant(self, pos):
         # This plant simply computes the speed
         # First I need to grow the signal space
-        x = np.concatenate((pos, np.zeros((1, t2-t1+1))), axis=0)
+        x = np.concatenate((pos, np.zeros((1, pos.shape[1]))), axis=0)
         d = 0
-        for t in range(t1+1,t2+1):
+        for t in range(0, x.shape[1]):
             deltax = x[:,t] - x[:,t-1] 
             x[2,t] = np.linalg.norm(deltax)
         return x
+
+    def plot3D(self,xmin, xmax, ymin, ymax, points):
+        x = np.array([[],[]])
+        for i in np.linspace(xmin,xmax,points):
+            for j in np.linspace(ymin, ymax, points):
+                x = np.concatenate((x,[[i],[j]]),axis=1)
+
+        X = self.plant(x)
+        Z = []
+        for t in range(0,x.shape[1]):
+            Z.append(self.Rho(X,t))
+
+        fig = plt.figure()
+        ax = plt.axes(projection='3d')
+        ax.scatter(X[0,:], X[1,:], Z, c='r', marker='o')
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_zlabel('Robustness')
+        plt.show()
+
+    def plotsln3D(self, x):
+        X = self.plant(x)
+        Z = []
+        for t in range(0,x.shape[1]):
+            Z.append(self.Rho(X,t))
+
+        fig = plt.figure()
+        ax = plt.axes(projection='3d')
+        ax.plot3D(X[0,:], X[1,:], Z, c='r', marker='o')
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_zlabel('Robustness')
+        plt.show()
+
 
 
 
@@ -150,27 +186,31 @@ if __name__ == '__main__':
     from scipy.optimize import minimize
     # Available Times
     t1 = 0
-    t2 = 14 
+    t2 = 1000 
+    length = 10
 
     # Some predicates based on these points
     r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
     r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9)
-    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 1)
-    p = r1*r2*r3
+    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 3)
+    p = r1*r3
+    #p.plot3D(0, 10, 0, 10, 25)
 
     # Generate a guess trajectory 
-    x1 = p.x_guess(0,0)
+    x1 = p.x_guess(0,0, length)
     guess = x1.flatten()
     print('Initial Guess: ')
     print(x1)
     print('Initial Guess Robustness: ', p.robustness(x1))
     print('Initial cost: ', p.cost(x1))
+    p.plotsln3D(x1)
     # Now time to run optimization
-    bnd = p.bounds(0, 0)
+    bnd = p.bounds(0, 0, length)
     sln = minimize(p.cost, guess, method='TNC', bounds=bnd, tol=1e-6, options =
-            { 'disp':True
+            { 'disp':True,
+                'maxiter':1000
                 })
-    print(np.reshape(sln.x, (2,-1)))
+    print(p.plant(np.reshape(sln.x, (2,-1))))
     print('Final Robustness: ', p.robustnessflt(sln.x))
     print('Final cost: ', p.cost(sln.x))
-
+    p.plotsln3D(np.reshape(sln.x, (2,-1)))
