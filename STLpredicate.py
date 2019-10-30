@@ -109,11 +109,11 @@ class STLpredicate:
     def cost(self, xflt):
         x = np.reshape(xflt, (2, -1))
         p = self.robustness(x)
-        d = 0
+        """d = 0
         for t in range(0,x.shape[1] -1):
             deltax = x[:,t] - x[:,t+1] 
-            d += np.linalg.norm(deltax)
-        return 0*d - p*(self.t2 - self.t1 + 1)
+            d += np.linalg.norm(deltax)"""
+        return - p*(self.t2 - self.t1 + 1)
     
     def bounds(self, x0, y0, length):
         # Returns a tuple for the bound constraints
@@ -131,7 +131,7 @@ class STLpredicate:
     def x_guess(self, x0, y0, length):
         # The intial point is x0, y0
         # Random trajectory after that
-        x_tail = 9*np.random.rand(2, length)
+        x_tail = np.random.rand(2, length)
         x_start = np.array([[x0], [y0]])
         x = np.concatenate((x_start, x_tail), axis=1)
         return x
@@ -186,14 +186,14 @@ if __name__ == '__main__':
     from scipy.optimize import minimize
     # Available Times
     t1 = 0
-    t2 = 1000 
-    length = 10
+    t2 = 9
+    length = 9
 
     # Some predicates based on these points
     r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
     r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9)
-    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 3)
-    p = r1*r3
+    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2)
+    p = r1*r2*r3
     #p.plot3D(0, 10, 0, 10, 25)
 
     # Generate a guess trajectory 
@@ -203,12 +203,12 @@ if __name__ == '__main__':
     print(x1)
     print('Initial Guess Robustness: ', p.robustness(x1))
     print('Initial cost: ', p.cost(x1))
-    p.plotsln3D(x1)
+    #p.plotsln3D(x1)
     # Now time to run optimization
     bnd = p.bounds(0, 0, length)
     sln = minimize(p.cost, guess, method='TNC', bounds=bnd, tol=1e-6, options =
             { 'disp':True,
-                'maxiter':1000
+                'maxiter':5000
                 })
     print(p.plant(np.reshape(sln.x, (2,-1))))
     print('Final Robustness: ', p.robustnessflt(sln.x))
