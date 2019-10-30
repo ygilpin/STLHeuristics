@@ -179,7 +179,18 @@ class STLpredicate:
         ax.set_zlabel('Robustness')
         plt.show()
 
+    def diffEvoBB(self,xinit, yinit, length):
+        # Black box differential evolution function
+        pop_size = 20*length
+        n_cross = 5 # Number of forced cross-overs
+        cr = 0.9
 
+        # Generate Initial Population
+        pop = []
+        for i in range(pop_size + 1):
+            pop.append = self.guess(xinit, yinit, length)
+
+        return 0
 
 
 if __name__ == '__main__':
@@ -206,11 +217,7 @@ if __name__ == '__main__':
     #p.plotsln3D(x1)
     # Now time to run optimization
     bnd = p.bounds(0, 0, length)
-    sln = minimize(p.cost, guess, method='TNC', bounds=bnd, tol=1e-6, options =
-            { 'disp':True,
-                'maxiter':5000
-                })
-    print(p.plant(np.reshape(sln.x, (2,-1))))
-    print('Final Robustness: ', p.robustnessflt(sln.x))
-    print('Final cost: ', p.cost(sln.x))
+    sln = p.diffEvoBB(0,0,length)
+    print('Final Robustness: ', p.robustness(sln))
+    print('Final cost: ', p.cost(sln))
     p.plotsln3D(np.reshape(sln.x, (2,-1)))
