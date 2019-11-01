@@ -136,6 +136,16 @@ class STLpredicate:
         x_start = np.array([[x0], [y0]])
         x = np.concatenate((x_start, x_tail), axis=1)
         return x
+
+    def x_rw(self, x0, y0, step, length):
+        x = np.ones((1,length))*x0
+        y = np.ones((1,length))*y0
+        x = np.vstack((x,y))
+        for k in range(1, length):
+            walk = step*(2*np.random.rand(1,2) - 1)
+            x[:,k] = walk + x[:,k-1]
+        return x
+
     
     def plant(self, pos):
         # This plant simply computes the speed
@@ -180,7 +190,7 @@ class STLpredicate:
         ax.set_zlabel('Robustness')
         plt.show()
 
-    def diffEvoBB(self,xinit, yinit, length):
+    def diffEvoBB(self,xinit, yinit, step, length):
         # Black box differential evolution function
         pop_size = 20*length
         n_cross = 5 # Number of forced cross-overs
@@ -191,7 +201,7 @@ class STLpredicate:
         pop = []
         score = []
         for i in range(pop_size):
-            pop.append(self.x_guess(xinit, yinit, length))
+            pop.append(self.x_rw(xinit, yinit, step, length))
             score.append(self.robustness(pop[i]))
 
         # Evolution 
@@ -238,8 +248,8 @@ class STLpredicate:
                     pop[i] = tv
                 if score[i] > 0 or n >= max_iter:
                     converged = True
+            print('n: ', n, ' avg: ', np.mean(score), ' max: ', max(score))
             n += 1
-            print('avg: ', np.mean(score), ' max: ', max(score))
 
         return pop[np.argmax(score)]
 
@@ -249,16 +259,19 @@ if __name__ == '__main__':
     # Available Times
     t1 = 0
     t2 = 9
-    length = 9
+    length = 10
+    step = 4
 
     # Some predicates based on these points
     r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
     r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9)
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2)
     p = r1*r2*r3
+    guess = p.x_rw(0,0,step,length)
+    p.plotsln3D(guess)
 
     # Now time to run optimization
-    sln = p.diffEvoBB(0,0,length)
+    sln = p.diffEvoBB(0,0,step,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     p.plotsln3D(sln)
