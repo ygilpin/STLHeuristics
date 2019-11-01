@@ -3,6 +3,7 @@
 import numpy as np
 from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
+import copy as cp
 
 class STLpredicate:
     def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0):
@@ -34,9 +35,9 @@ class STLpredicate:
                 #print(deltax)
                 #print(deltat)
                 if sat:
-                    rhoVal = (deltat)/((deltax)+0.25)
+                    rhoVal = (deltat)/((deltax)+0.2)
                 else:
-                    rhoVal = -(deltax)/((deltat)+0.25)
+                    rhoVal = -(deltax)/((deltat)+0.2)
         #print("myRho called", rhoVal)
         return rhoVal
 
@@ -131,7 +132,7 @@ class STLpredicate:
     def x_guess(self, x0, y0, length):
         # The intial point is x0, y0
         # Random trajectory after that
-        x_tail = np.random.rand(2, length)
+        x_tail = 9*np.random.rand(2, length)
         x_start = np.array([[x0], [y0]])
         x = np.concatenate((x_start, x_tail), axis=1)
         return x
@@ -183,14 +184,64 @@ class STLpredicate:
         # Black box differential evolution function
         pop_size = 20*length
         n_cross = 5 # Number of forced cross-overs
-        cr = 0.9
+        cr = 0.5
+        max_iter = 400
 
         # Generate Initial Population
         pop = []
-        for i in range(pop_size + 1):
-            pop.append = self.guess(xinit, yinit, length)
+        score = []
+        for i in range(pop_size):
+            pop.append(self.x_guess(xinit, yinit, length))
+            score.append(self.robustness(pop[i]))
 
-        return 0
+        # Evolution 
+        converged = False
+        n = 0
+        pindex = [i for i in range(pop_size)]
+        while not converged:
+            for i in range(pop_size):
+                # Determine Parents Randomly
+                parents = np.random.permutation(pindex)
+                ii = 0
+                if parents[ii] == i:
+                    ii +=1
+                p1 = parents[ii]
+                ii += 1
+                if parents[ii] == i:
+                    ii +=1
+                p2 = parents[ii]
+                ii += 1
+                if parents[ii] == i:
+                    ii +=1
+                p3 = parents[ii]
+                ii += 1
+
+                # Pick f randomly 
+                f = np.random.ranf()*0.5 + 0.5
+                """if f < 0.5 or f > 1:
+                    print(f)
+                    return 0"""
+                vd = pop[p1] + f*(pop[p2]-pop[p3])
+
+                # Generate test vector
+                tv = cp.deepcopy(pop[p1])
+                for j in range(1,length):
+                    if j <= n_cross:
+                        tv[:,j] = vd[:,j]
+                    elif (np.random.random() > cr):
+                        tv[:,j] = vd[:,j]
+
+                # Compare the scores
+                tv_score = self.robustness(tv)
+                if tv_score > score[i]:
+                    score[i] = tv_score
+                    pop[i] = tv
+                if score[i] > 0 or n >= max_iter:
+                    converged = True
+            n += 1
+            print('avg: ', np.mean(score), ' max: ', max(score))
+
+        return pop[np.argmax(score)]
 
 
 if __name__ == '__main__':
@@ -205,19 +256,9 @@ if __name__ == '__main__':
     r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9)
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2)
     p = r1*r2*r3
-    #p.plot3D(0, 10, 0, 10, 25)
 
-    # Generate a guess trajectory 
-    x1 = p.x_guess(0,0, length)
-    guess = x1.flatten()
-    print('Initial Guess: ')
-    print(x1)
-    print('Initial Guess Robustness: ', p.robustness(x1))
-    print('Initial cost: ', p.cost(x1))
-    #p.plotsln3D(x1)
     # Now time to run optimization
-    bnd = p.bounds(0, 0, length)
     sln = p.diffEvoBB(0,0,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
-    p.plotsln3D(np.reshape(sln.x, (2,-1)))
+    p.plotsln3D(sln)
