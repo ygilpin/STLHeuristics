@@ -76,12 +76,12 @@ class STLpredicate:
         return p
 
     def robustness(self,x):
-        return min(self.RhoV)
+        return min(self.RhoV(x))
 
     def robustnessflt(self,xflt):
         # Same robustness, but flattened version
         x = np.reshape(xflt, (2,-1)) 
-        return min(self.RhoV)
+        return min(self.RhoV(x))
 
     def __invert__(self):
         return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self)
@@ -233,7 +233,7 @@ class STLpredicate:
                 vd = pop[p1] + f*(pop[p2]-pop[p3])
 
                 # Generate test vector
-                tv = cp.deepcopy(pop[p1])
+                tv = cp.deepcopy(pop[p1]) #pop[i]
                 for j in range(1,length):
                     if j <= n_cross:
                         tv[:,j] = vd[:,j]
@@ -254,9 +254,9 @@ class STLpredicate:
 
     def hillClimbingPW(self,xinit, yinit, step, length):
         # Pointwise differential evolution function
-        # That is to say differential evolution is applied to each point individually
-        pop_size = 20*length
-        cr = 0.5
+        # That is to say differential evolution is applied
+        # to each point individually
+        pop_size = 10*length 
         max_iter = 400
 
         # Generate Initial Population
@@ -264,9 +264,13 @@ class STLpredicate:
         score = []
         for i in range(pop_size):
             pop.append(self.x_rw(xinit, yinit, step, length))
-            score.append(self.robustness(pop[i]))
+            score.append(self.RhoV(pop[i]))
+            #print(pop[i])
+            #print(score[i])
         
         converged = False
+        pindex = [i for i in range(pop_size)]
+        n = 0
         while not converged:
             for candiate in range(pop_size):
                 # Determine Parents Randomly
@@ -287,26 +291,33 @@ class STLpredicate:
 
                 # Pick f randomly 
                 f = np.random.ranf()*0.5 + 0.5
-                for point in range(length):
+                for point in range(1,length):
                     # Generate Test Point
-                    pd = pop[p1[:, point]] + f*(pop[p2[:,point]] - pop[p3[:,point]])
-                    newCandidate = cp.deepcopy(pop[p1])
-                    newCandidate = newCandidate[:,point] + pd
+                    pd = pop[p1][:,point] + f*(pop[p2][:,point] - pop[p3][:,point])
+                    newCandidate = cp.deepcopy(pop[candidate])
+                    newCandidate[:,point] = newCandidate[:,point] + pd
+                    newCandidate = self.plant(newCandidate)
 
                     # Compare Scores
-                    if self.Rho(newCandidate, point) > score[p1[point]]:
-                        pop[p1,:,point] = newCandiate[:,point]
+                    if self.Rho(newCandidate,point)  > score[candidate][point]:
+                        pop[candidate][:,point] = newCandidate[1-2,point]
+                        score[candidate] = self.RhoV(pop[p1])
 
-                    
+                print('n: ', n, max((min(score[p]) for p in parents)))
+        n = n + 1
+        if max_iter > n:
+            converged = True
 
-            return 0
+        print('n: ', n, max((min(score[p]) for p in parents)))
+
+        return pop[np.argmax(((min(score[p]) for p in parents)))]
 
 if __name__ == '__main__':
     from scipy.optimize import minimize
     # Available Times
     t1 = 0
-    t2 = 19
-    length = 20
+    t2 = 9
+    length = 10
     step = 4
 
     # Some predicates based on these points
@@ -324,7 +335,7 @@ if __name__ == '__main__':
     p.plotsln3D(guess)"""
     
     # Now time to run optimization
-    sln = p.diffEvoBB(0,0,step,length)
+    sln = p.hillClimbingPW(0,0,step,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     p.plotsln3D(sln)
