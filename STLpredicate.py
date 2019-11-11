@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import copy as cp
 
 class STLpredicate:
-    def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0):
+    def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0,
+            robType = 'pw'):
         self.t1 = t1 # When predicate is active
         self.t2 = t2
         self.A  = A # Equation of a line
@@ -15,6 +16,7 @@ class STLpredicate:
         self.cdn = cdn # conjuction, disjunction or negation
         self.left = left # other STL predicates for conjuction/disjunction
         self.right = right
+        self.robType = robType # Type of robustness: pw is pointwise, t is traditional
 
     def myRho(self, x, t):
         # Calculate the robustness of myself
@@ -24,20 +26,27 @@ class STLpredicate:
             if self.ae == 'a':
                 rhoVal = self.b - self.A @ x[:,t]
             else:
-                # Check if there is satisfaction at any point
-                sat = False
-                for k in range(0, x.shape[1]):
-                    if (self.b - self.A @ x[:,k]) > 0:
-                        sat = True
-                        break
-                deltax = abs(self.b - self.A @ x[:,t])
-                deltat = abs(1 + self.t2 -t)
-                #print(deltax)
-                #print(deltat)
-                if sat:
-                    rhoVal = (deltat)/((deltax)+0.2)
+                if self.robType == 'pw':
+                    # Check if there is satisfaction at any point
+                    sat = False
+                    for k in range(0, x.shape[1]):
+                        if (self.b - self.A @ x[:,k]) > 0:
+                            sat = True
+                            break
+                    deltax = abs(self.b - self.A @ x[:,t])
+                    deltat = abs(1 + self.t2 -t)
+                    if sat:
+                        rhoVal = (deltat)/((deltax)+0.2)
+                    else:
+                        rhoVal = -(deltax)/((deltat)+0.2)
                 else:
-                    rhoVal = -(deltax)/((deltat)+0.2)
+                    print('Traditional robustness')
+                    rhoVal = self.b - self.A @ x[:,0]
+                    for k in range(1, x.shape[0]):
+                        pi = self.b - self.A @ x[:,k]
+                        if pi > rhoVal:
+                            rhoVal = pi
+        
         #print("myRho called", rhoVal)
         return rhoVal
 
@@ -84,26 +93,28 @@ class STLpredicate:
         return min(self.RhoV(x))
 
     def __invert__(self):
-        return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self)
+        return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self, robType = self.robType)
 
     def __add__(self, other):
         #print("Disjunction between two predicates")
-        return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='d', left=self, right=other)
+        return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='d',
+                left=self, right=other, robType = self.robType)
 
     def __mul__(self, other):
         #print("Conjunction between two predicates")
-        return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='c', left=self, right=other)
+        return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='c',
+                left=self, right=other, robType = self.robType)
 
-    def rect(t1,t2,ae,x1,x2,y1,y2):
+    def rect(t1,t2,ae,x1,x2,y1,y2, robType):
         # First the equations for the lines are needed
         # Top line
-        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0]), y2)
+        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0]), y2, robType=robType)
         # Bottom line
-        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0]), -y1)
+        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0]), -y1, robType=robType)
         # Left line
-        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0]), -x1) 
+        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0]), -x1, robType=robType) 
         # Right line
-        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0]), x2)
+        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0]), x2, robType=robType)
         return p1 * p2 * p3 * p4
 
     def cost(self, xflt):
@@ -150,9 +161,8 @@ class STLpredicate:
         # This plant simply computes the speed
         # First I need to grow the signal space
         x = np.concatenate((pos, np.zeros((1, pos.shape[1]))), axis=0)
-        d = 0
-        for t in range(0, x.shape[1]):
-            deltax = x[:,t] - x[:,t-1] 
+        for t in range(1, x.shape[1]):
+            deltax = (x[:,t] - x[:,t-1])[0:2] 
             x[2,t] = np.linalg.norm(deltax)
         return x
 
@@ -193,8 +203,8 @@ class STLpredicate:
         # Black box differential evolution function
         pop_size = 20*length
         n_cross = 5 # Number of forced cross-overs
-        cr = 0.5
-        max_iter = 400
+        cr = 0.8
+        max_iter = 3000
 
         # Generate Initial Population
         pop = []
@@ -207,6 +217,7 @@ class STLpredicate:
         converged = False
         n = 0
         pindex = [i for i in range(pop_size)]
+        jindex = [i for i in range(1,length)]
         while not converged:
             for i in range(pop_size):
                 # Determine Parents Randomly
@@ -230,22 +241,23 @@ class STLpredicate:
                 """if f < 0.5 or f > 1:
                     print(f)
                     return 0"""
-                vd = pop[p1] + f*(pop[p2]-pop[p3])
+                vc = pop[p1] + f*(pop[p2]-pop[p3])
 
                 # Generate test vector
-                tv = cp.deepcopy(pop[p1]) #pop[i]
+                tv = cp.deepcopy(pop[i]) #pop[i]
+                jindices = np.random.permutation(jindex)
                 for j in range(1,length):
                     if j <= n_cross:
-                        tv[:,j] = vd[:,j]
+                        tv[:,jindices[j]] = vc[:,jindices[j]]
                     elif (np.random.random() > cr):
-                        tv[:,j] = vd[:,j]
+                        tv[:,j] = vc[:,j]
 
                 # Compare the scores
                 tv_score = self.robustness(tv)
                 if tv_score > score[i]:
                     score[i] = tv_score
                     pop[i] = tv
-                if score[i] > 0 or n >= max_iter:
+                if score[i] > 0.5 or n >= max_iter:
                     converged = True
             print('n: ', n, ' avg: ', np.mean(score), ' max: ', max(score))
             n += 1
@@ -265,14 +277,12 @@ class STLpredicate:
         for i in range(pop_size):
             pop.append(self.x_rw(xinit, yinit, step, length))
             score.append(self.RhoV(pop[i]))
-            #print(pop[i])
-            #print(score[i])
         
         converged = False
         pindex = [i for i in range(pop_size)]
         n = 0
         while not converged:
-            for candiate in range(pop_size):
+            for candidate in range(pop_size):
                 # Determine Parents Randomly
                 parents = np.random.permutation(pindex)
                 ii = 0
@@ -288,6 +298,7 @@ class STLpredicate:
                     ii +=1
                 p3 = parents[ii]
                 ii += 1
+                print('x: ', ii, 'p1,p2,p3', p1, ',' , p2, ',', p3 , ',')
 
                 # Pick f randomly 
                 f = np.random.ranf()*0.5 + 0.5
@@ -303,8 +314,8 @@ class STLpredicate:
                         pop[candidate][:,point] = newCandidate[1-2,point]
                         score[candidate] = self.RhoV(pop[p1])
 
-                print('n: ', n, max((min(score[p]) for p in parents)))
-        n = n + 1
+            print('n: ', n, max((min(score[p]) for p in parents)))
+            n = n + 1
         if max_iter > n:
             converged = True
 
@@ -317,25 +328,29 @@ if __name__ == '__main__':
     # Available Times
     t1 = 0
     t2 = 9
-    length = 10
+    length = 10 
     step = 4
+    robustnessType = 'pw'
 
     # Some predicates based on these points
-    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
-    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9)
-    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2)
+    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType)
+    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType)
+    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType)
     p = r1*r2*r3
     """guess = p.x_rw(0,0,step,length)
-    p.plotsln3D(guess)
-    guess = p.x_rw(0,0,step,length)
-    p.plotsln3D(guess)
-    guess = p.x_rw(0,0,step,length)
-    p.plotsln3D(guess)
-    guess = p.x_rw(0,0,step,length)
-    p.plotsln3D(guess)"""
+    guess_cmplt = p.plant(guess)
+    print(guess_cmplt)"""
     
     # Now time to run optimization
-    sln = p.hillClimbingPW(0,0,step,length)
+    sln = p.diffEvoBB(0,0,step,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
+    print("Solution")
+    print(p.plant(sln))
+    print("Robustness of predicates 1 (obstacle), 2 (eventually), 3 (speed)")
+    print(r1.RhoV(sln))
+    print(r2.RhoV(sln))
+    print(r3.RhoV(sln))
+    print('Combined Robustness Vector')
+    print(p.RhoV(sln))
     p.plotsln3D(sln)
