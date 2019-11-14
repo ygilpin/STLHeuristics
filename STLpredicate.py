@@ -4,10 +4,10 @@ import numpy as np
 from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
 import copy as cp
+import math 
 
 class STLpredicate:
-    def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0,
-            robType = 'pw'):
+    def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0, robType = 'pw', minMaxType='n'):
         self.t1 = t1 # When predicate is active
         self.t2 = t2
         self.A  = A # Equation of a line
@@ -17,6 +17,32 @@ class STLpredicate:
         self.left = left # other STL predicates for conjuction/disjunction
         self.right = right
         self.robType = robType # Type of robustness: pw is pointwise, t is traditional
+        self.minMaxType = minMaxType # Type of min/max : 'n' for normal, 'ag', 'sm'
+        self.k = 0.5
+
+    def pmin(self, v):
+        if self.minMaxType == 'n': 
+            return min(v)
+        
+        if self.minMaxType == 'ag':
+            pos = True
+            for element in v:
+                if element < 0:
+                    pos = False
+                break
+            if pos:
+                return np.mean(v)
+            else:
+                return -math.sqrt(abs(np.prod(v)))
+
+        if self.minMaxType == 'sm':
+            sm = 0
+            for element in v:
+                sm += exp(v)
+            return log(sm)
+            
+    def pmax(self, v):
+        return -self.pmin(v)
 
     def myRho(self, x, t):
         # Calculate the robustness of myself
@@ -60,9 +86,9 @@ class STLpredicate:
             rightRho = self.right.Rho(x,t)
             if leftRho != 'Nan' and rightRho != 'Nan':
                 if self.cdn == 'c':
-                    return min(leftRho, rightRho)
+                    return self.pmin([leftRho, rightRho])
                 elif self.cdn == 'd':
-                    return max(leftRho, rightRho)
+                    return self.pmax([leftRho, rightRho])
             elif leftRho  == 'Nan' and rightRho != 'Nan':
                 return rightRho
             elif leftRho != 'Nan' and rightRho == 'Nan':
@@ -85,36 +111,37 @@ class STLpredicate:
         return p
 
     def robustness(self,x):
-        return min(self.RhoV(x))
+        return self.pmin(self.RhoV(x))
 
     def robustnessflt(self,xflt):
         # Same robustness, but flattened version
         x = np.reshape(xflt, (2,-1)) 
-        return min(self.RhoV(x))
+        return self.pmin(self.RhoV(x))
 
     def __invert__(self):
-        return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self, robType = self.robType)
+        return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self, robType = self.robType,
+                minMaxType = self.minMaxType)
 
     def __add__(self, other):
         #print("Disjunction between two predicates")
         return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='d',
-                left=self, right=other, robType = self.robType)
+                left=self, right=other, robType = self.robType, minMaxType=self.minMaxType)
 
     def __mul__(self, other):
         #print("Conjunction between two predicates")
         return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='c',
-                left=self, right=other, robType = self.robType)
+                left=self, right=other, robType = self.robType, minMaxType=self.minMaxType)
 
-    def rect(t1,t2,ae,x1,x2,y1,y2, robType):
+    def rect(t1,t2,ae,x1,x2,y1,y2, robType, minMaxType = 'n'):
         # First the equations for the lines are needed
         # Top line
-        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0]), y2, robType=robType)
+        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0]), y2, robType=robType, minMaxType=minMaxType)
         # Bottom line
-        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0]), -y1, robType=robType)
+        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0]), -y1, robType=robType, minMaxType=minMaxType)
         # Left line
-        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0]), -x1, robType=robType) 
+        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0]), -x1, robType=robType, minMaxType=minMaxType)
         # Right line
-        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0]), x2, robType=robType)
+        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0]), x2, robType=robType, minMaxType=minMaxType)
         return p1 * p2 * p3 * p4
 
     def cost(self, xflt):
@@ -308,8 +335,8 @@ class STLpredicate:
                     pd = pop[p1][:,point] + f*(pop[p2][:,point] - pop[p3][:,point])
                     newCandidate[:,point] = newCandidate[:,point] + pd
                     newCandidateScoreV = self.RhoV(newCandidate)
-                    newCandidateScore = min(newCandidateScoreV)
-                    candidateScore = min(score[candidate])
+                    newCandidateScore = self.pmin(newCandidateScoreV)
+                    candidateScore = self.pmin(score[candidate])
 
 
                     # Compare Scores
@@ -338,13 +365,10 @@ if __name__ == '__main__':
     robustnessType = 'pw'
 
     # Some predicates based on these points
-    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType)
-    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType)
-    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType)
+    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType, minMaxType = 'ag')
+    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType, minMaxType = 'ag')
+    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = 'ag')
     p = r1*r2*r3
-    """guess = p.x_rw(0,0,step,length)
-    guess_cmplt = p.plant(guess)
-    print(guess_cmplt)"""
     
     # Now time to run optimization
     sln = p.hillClimbingPW(0,0,step,length)
