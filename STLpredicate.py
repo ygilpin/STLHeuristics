@@ -36,9 +36,9 @@ class STLpredicate:
                     deltax = abs(self.b - self.A @ x[:,t])
                     deltat = abs(1 + self.t2 -t)
                     if sat:
-                        rhoVal = (deltat)/((deltax)+0.2)
+                        rhoVal = (deltat)/((deltax)+0.4)
                     else:
-                        rhoVal = -(deltax)/((deltat)+0.2)
+                        rhoVal = -(deltax)/((deltat)+0.4)
                 else:
                     print('Traditional robustness')
                     rhoVal = self.b - self.A @ x[:,0]
@@ -77,7 +77,7 @@ class STLpredicate:
             return self.right.Rho(x,t)
         return self.myRho(x,t)
 
-    def  RhoV(self,x):
+    def RhoV(self,x):
         traj = self.plant(x)
         p = []
         for t in range(0, x.shape[1]):
@@ -269,7 +269,7 @@ class STLpredicate:
         # That is to say differential evolution is applied
         # to each point individually
         pop_size = 10*length 
-        max_iter = 400
+        max_iter = 3000 
 
         # Generate Initial Population
         pop = []
@@ -284,6 +284,7 @@ class STLpredicate:
         while not converged:
             for candidate in range(pop_size):
                 # Determine Parents Randomly
+                # The same parents are used for all points
                 parents = np.random.permutation(pindex)
                 ii = 0
                 if parents[ii] == i:
@@ -298,26 +299,30 @@ class STLpredicate:
                     ii +=1
                 p3 = parents[ii]
                 ii += 1
-                print('x: ', ii, 'p1,p2,p3', p1, ',' , p2, ',', p3 , ',')
 
                 # Pick f randomly 
                 f = np.random.ranf()*0.5 + 0.5
+                newCandidate = cp.deepcopy(pop[candidate])
                 for point in range(1,length):
                     # Generate Test Point
                     pd = pop[p1][:,point] + f*(pop[p2][:,point] - pop[p3][:,point])
-                    newCandidate = cp.deepcopy(pop[candidate])
                     newCandidate[:,point] = newCandidate[:,point] + pd
-                    newCandidate = self.plant(newCandidate)
+                    newCandidateScoreV = self.RhoV(newCandidate)
+                    newCandidateScore = min(newCandidateScoreV)
+                    candidateScore = min(score[candidate])
+
 
                     # Compare Scores
-                    if self.Rho(newCandidate,point)  > score[candidate][point]:
-                        pop[candidate][:,point] = newCandidate[1-2,point]
-                        score[candidate] = self.RhoV(pop[p1])
+                    if newCandidateScoreV[point]  > score[candidate][point] and newCandidateScore > candidateScore:
+                        pop[candidate][:,point] = newCandidate[:,point]
+                        score[candidate] = newCandidateScoreV
+                    else:
+                        newCandidate[:,point] = pop[candidate][:,point]
 
-            print('n: ', n, max((min(score[p]) for p in parents)))
+            print('n: ', n, np.mean([min(score[p]) for p in parents]), max((min(score[p]) for p in parents)))
+            if max_iter < n:
+                converged = True
             n = n + 1
-        if max_iter > n:
-            converged = True
 
         print('n: ', n, max((min(score[p]) for p in parents)))
 
@@ -342,7 +347,7 @@ if __name__ == '__main__':
     print(guess_cmplt)"""
     
     # Now time to run optimization
-    sln = p.diffEvoBB(0,0,step,length)
+    sln = p.hillClimbingPW(0,0,step,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     print("Solution")
