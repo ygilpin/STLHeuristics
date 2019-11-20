@@ -18,7 +18,7 @@ class STLpredicate:
         self.right = right
         self.robType = robType # Type of robustness: pw is pointwise, t is traditional
         self.minMaxType = minMaxType # Type of min/max : 'n' for normal, 'ag', 'sm'
-        self.k = 0.5
+        self.k = 50
 
     def pmin(self, v):
         if self.minMaxType == 'n': 
@@ -35,11 +35,11 @@ class STLpredicate:
             else:
                 return -math.sqrt(abs(np.prod(v)))
 
-        if self.minMaxType == 'sm':
+        if self.minMaxType == 'el':
             sm = 0
             for element in v:
-                sm += exp(v)
-            return log(sm)
+                sm += math.exp(-self.k*element)
+            return -math.log(sm)/self.k
             
     def pmax(self, v):
         return -self.pmin(v)
@@ -355,6 +355,123 @@ class STLpredicate:
 
         return pop[np.argmax(((min(score[p]) for p in parents)))]
 
+    def WPF(self, xinit, yinit, step, length):
+        pop_size = 30*length
+        maxiter = 3000
+        
+        # Generate Initial Guess 
+        bCand = self.x_rw(xinit, yinit, step, length)
+        bScore = self.robustness(bCand)
+
+        for i in range(1,pop_size):
+            nCand = self.x_rw(xinit, yinit, step, length)
+            nScore = self.robustness(nCand)
+            if nScore > bScore:
+                bCand = nCand
+                bScore = nScore
+        print("Best initial guess: ", bScore)
+        print(bCand)
+
+        converged = False
+        n = 0
+        while maxiter > n:
+            # Find the worst point
+            pv = self.RhoV(bCand)
+            imin = np.argmin(pv)
+            
+            # Generate the first test point
+            bCandPoint = cp.deepcopy(bCand)
+            print(bCandPoint)
+            pointC = np.random.rand(1,2) - 0.5
+            bCandPoint[:, imin] = pointC
+            pointSV = self.RhoV(bCandPoint)
+
+            while pv[imin] > pointSV[imin]:
+                bCandPoint = cp.deepcopy(bCand)
+                pointC = np.random.rand(1,2) - 0.5
+                bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
+                pointSV = self.RhoV(bCandPoint)
+                print('Current: ', pv[imin], 'Proposed: ', pointSV[imin])
+
+            print('PV', pv)
+            if self.pmin(pv) < self.pmin(pointSV):
+                bCand = cp.deepcopy(bCandPoint)
+            n = n + 1
+            print('n: ', n, ' robustness: ', self.pmin(bCand))
+
+        return bCand
+
+    def TrajOptSS(self, xinit, yinit, step, length):
+        # Black box differential evolution function
+        # That uses the sum of the robustness instead
+        # of the minimum or other approximation at the final step
+        pop_size = 20*length
+        n_cross = 5 # Number of forced cross-overs
+        cr = 0.8
+        max_iter = 3000
+
+        # Generate Initial Population
+        pop = []
+        score = []
+        for i in range(pop_size):
+            pop.append(self.x_rw(xinit, yinit, step, length))
+            score.append(sum(self.RhoV(pop[i])))
+
+        # Evolution 
+        converged = False
+        n = 0
+        pindex = [i for i in range(pop_size)]
+        jindex = [i for i in range(1,length)]
+        while not converged:
+            for i in range(pop_size):
+                # Determine Parents Randomly
+                parents = np.random.permutation(pindex)
+                ii = 0
+                if parents[ii] == i:
+                    ii +=1
+                p1 = parents[ii]
+                ii += 1
+                if parents[ii] == i:
+                    ii +=1
+                p2 = parents[ii]
+                ii += 1
+                if parents[ii] == i:
+                    ii +=1
+                p3 = parents[ii]
+                ii += 1
+
+                # Pick f randomly 
+                f = np.random.ranf()*0.5 + 0.5
+                """if f < 0.5 or f > 1:
+                    print(f)
+                    return 0"""
+                vc = pop[p1] + f*(pop[p2]-pop[p3])
+
+                # Generate test vector
+                tv = cp.deepcopy(pop[i]) #pop[i]
+                jindices = np.random.permutation(jindex)
+                for j in range(1,length):
+                    if j <= n_cross:
+                        tv[:,jindices[j]] = vc[:,jindices[j]]
+                    elif (np.random.random() > cr):
+                        tv[:,j] = vc[:,j]
+
+                # Compare the scores
+                tv_score = sum(self.RhoV(tv))
+                if tv_score > score[i]:
+                    score[i] = tv_score
+                    pop[i] = tv
+            k = np.argmax(score)
+            act = self.robustness(pop[k])
+            print('n: ', n, ' avg: ', np.mean(score), ' max: ', score[k], ' Actual: ', act)
+            n += 1
+            if act > 0.5 or n >= max_iter:
+                converged = True
+
+        return pop[np.argmax(score)]
+
+
+
 if __name__ == '__main__':
     from scipy.optimize import minimize
     # Available Times
@@ -363,15 +480,17 @@ if __name__ == '__main__':
     length = 10 
     step = 4
     robustnessType = 'pw'
+    mM = 'n'
 
     # Some predicates based on these points
-    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType, minMaxType = 'ag')
-    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType, minMaxType = 'ag')
-    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = 'ag')
+    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType, minMaxType = mM)
+    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType, minMaxType = mM)
+    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = mM)
     p = r1*r2*r3
+    #p.diffEvoBB(0,0,step,length)
     
     # Now time to run optimization
-    sln = p.hillClimbingPW(0,0,step,length)
+    sln = p.TrajOptSS(0,0,step,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     print("Solution")
