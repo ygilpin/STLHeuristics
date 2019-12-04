@@ -18,18 +18,20 @@ class STLpredicate:
         self.right = right
         self.robType = robType # Type of robustness: pw is pointwise, t is traditional
         self.minMaxType = minMaxType # Type of min/max : 'n' for normal, 'ag', 'sm'
-        self.k = 50
+        self.k = 2
 
     def pmin(self, v):
         if self.minMaxType == 'n': 
             return min(v)
         
         if self.minMaxType == 'ag':
+            normfact = max(np.abs(v))
+            v = np.divide(v, normfact)
             pos = True
             for element in v:
                 if element < 0:
                     pos = False
-                break
+                    break
             if pos:
                 return np.mean(v)
             else:
@@ -111,7 +113,8 @@ class STLpredicate:
         return p
 
     def robustness(self,x):
-        return self.pmin(self.RhoV(x))
+        tmp = self.pmin(self.RhoV(x))
+        return tmp
 
     def robustnessflt(self,xflt):
         # Same robustness, but flattened version
@@ -147,12 +150,14 @@ class STLpredicate:
     def cost(self, xflt):
         x = np.reshape(xflt, (2, -1))
         p = self.robustness(x)
-        """d = 0
-        for t in range(0,x.shape[1] -1):
-            deltax = x[:,t] - x[:,t+1] 
-            d += np.linalg.norm(deltax)"""
         return - p*(self.t2 - self.t1 + 1)
-    
+
+    def expsum(self,v):
+        esum = 0
+        for element in v:
+            esum += math.exp(-self.k*element)
+        return esum
+
     def bounds(self, x0, y0, length):
         # Returns a tuple for the bound constraints
         # The first point is fixed. 
@@ -227,13 +232,15 @@ class STLpredicate:
         plt.show()
 
     def diffEvoBB(self,xinit, yinit, step, length):
+        print("Differential Evolution Blackbox")
         # Black box differential evolution function
         pop_size = 20*length
         n_cross = 5 # Number of forced cross-overs
         cr = 0.8
-        max_iter = 3000
+        max_iter = 30
 
         # Generate Initial Population
+        print("Generating initial population")
         pop = []
         score = []
         for i in range(pop_size):
@@ -241,6 +248,7 @@ class STLpredicate:
             score.append(self.robustness(pop[i]))
 
         # Evolution 
+        print("Evolution Time")
         converged = False
         n = 0
         pindex = [i for i in range(pop_size)]
@@ -357,10 +365,11 @@ class STLpredicate:
 
     def WPF(self, xinit, yinit, step, length):
         pop_size = 30*length
-        maxiter = 3000
+        maxiter = 6000 
         
         # Generate Initial Guess 
-        bCand = self.x_rw(xinit, yinit, step, length)
+        print("Generating a good initial guess")
+        bCand = self.x_rw(xinit, yinit, step, length) 
         bScore = self.robustness(bCand)
 
         for i in range(1,pop_size):
@@ -369,35 +378,38 @@ class STLpredicate:
             if nScore > bScore:
                 bCand = nCand
                 bScore = nScore
-        print("Best initial guess: ", bScore)
-        print(bCand)
+        #print("Best initial guess: ", bScore)
+        #print(bCand)
 
         converged = False
         n = 0
         while maxiter > n:
             # Find the worst point
-            pv = self.RhoV(bCand)
-            imin = np.argmin(pv)
-            
-            # Generate the first test point
+            pv = self.RhoV(bCand) # robutness vector
+            #print('PV: ', pv)
+            #print('pv[1:] ', pv[1:])
+            imin = np.argmin(pv[1:]) +1 # index of the worst point
+            #print(imin)
+             
+            # Generate the test vector
             bCandPoint = cp.deepcopy(bCand)
-            print(bCandPoint)
+            # Generate a potentially better point
             pointC = np.random.rand(1,2) - 0.5
-            bCandPoint[:, imin] = pointC
+            bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
             pointSV = self.RhoV(bCandPoint)
 
             while pv[imin] > pointSV[imin]:
-                bCandPoint = cp.deepcopy(bCand)
-                pointC = np.random.rand(1,2) - 0.5
+                bCandPoint = cp.deepcopy(bCand) # Reset the copy
+                pointC = 0.001*np.random.rand(1,2) - 0.0005
                 bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
                 pointSV = self.RhoV(bCandPoint)
-                print('Current: ', pv[imin], 'Proposed: ', pointSV[imin])
+                print('n: ', n, ' Current: ', pv[imin], 'Proposed: ', pointSV[imin])
+                n = n + 1
 
-            print('PV', pv)
-            if self.pmin(pv) < self.pmin(pointSV):
-                bCand = cp.deepcopy(bCandPoint)
-            n = n + 1
-            print('n: ', n, ' robustness: ', self.pmin(bCand))
+            #print('PV', pv)
+            #if self.pmin(pv) < self.pmin(pointSV):
+            bCand = cp.deepcopy(bCandPoint)
+            #print('n: ', n, ' robustness: ', self.pmin(bCand))
 
         return bCand
 
@@ -408,14 +420,14 @@ class STLpredicate:
         pop_size = 20*length
         n_cross = 5 # Number of forced cross-overs
         cr = 0.8
-        max_iter = 3000
+        max_iter = 6000
 
         # Generate Initial Population
         pop = []
         score = []
         for i in range(pop_size):
             pop.append(self.x_rw(xinit, yinit, step, length))
-            score.append(sum(self.RhoV(pop[i])))
+            score.append(self.expsum(self.RhoV(pop[i])))
 
         # Evolution 
         converged = False
@@ -442,9 +454,6 @@ class STLpredicate:
 
                 # Pick f randomly 
                 f = np.random.ranf()*0.5 + 0.5
-                """if f < 0.5 or f > 1:
-                    print(f)
-                    return 0"""
                 vc = pop[p1] + f*(pop[p2]-pop[p3])
 
                 # Generate test vector
@@ -457,18 +466,18 @@ class STLpredicate:
                         tv[:,j] = vc[:,j]
 
                 # Compare the scores
-                tv_score = sum(self.RhoV(tv))
-                if tv_score > score[i]:
+                tv_score = self.expsum(self.RhoV(tv))
+                if tv_score < score[i]:
                     score[i] = tv_score
                     pop[i] = tv
-            k = np.argmax(score)
+            k = np.argmin(score)
             act = self.robustness(pop[k])
-            print('n: ', n, ' avg: ', np.mean(score), ' max: ', score[k], ' Actual: ', act)
+            print('n: ', n, ' avg: ', np.mean(score), ' min: ', score[k], ' Actual: ', act)
             n += 1
-            if act > 0.5 or n >= max_iter:
+            if act > 1 or n >= max_iter:
                 converged = True
 
-        return pop[np.argmax(score)]
+        return pop[np.argmin(score)]
 
 
 
@@ -487,10 +496,16 @@ if __name__ == '__main__':
     r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType, minMaxType = mM)
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = mM)
     p = r1*r2*r3
-    #p.diffEvoBB(0,0,step,length)
+    #print(p.pmin([-5, -4]))
+    #print(p.pmin([-5, 2]))
+    #print(p.pmin([10, 12]))
+    #sln = p.x_rw(0,0,4,5)
+    #print(sln)
+    #print(p.RhoV(sln))
+    #print(p.robustness(sln))
     
     # Now time to run optimization
-    sln = p.TrajOptSS(0,0,step,length)
+    sln = p.WPF(0,0,step,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     print("Solution")
