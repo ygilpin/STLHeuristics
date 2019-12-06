@@ -487,7 +487,7 @@ if __name__ == '__main__':
     t1 = 0
     t2 = 9
     length = 10 
-    step = 4
+    step = 2
     robustnessType = 'pw'
     mM = 'n'
 
