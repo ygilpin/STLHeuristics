@@ -18,7 +18,7 @@ class STLpredicate:
         self.right = right
         self.robType = robType # Type of robustness: pw is pointwise, t is traditional
         self.minMaxType = minMaxType # Type of min/max : 'n' for normal, 'ag', 'sm'
-        self.k = 2
+        self.k = 4
 
     def pmin(self, v):
         if self.minMaxType == 'n': 
@@ -489,6 +489,7 @@ if __name__ == '__main__':
     t2 = 9 
     length = 10
     step = 1.5
+    step = 1.5 
     robustnessType = 'pw'
     mM = 'n'
 
@@ -497,6 +498,7 @@ if __name__ == '__main__':
     r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType, minMaxType = mM)
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = mM)
     p = r1*r2*r3
+    r2.plot3D(-1, 0.5, -1, 0.5, 10)
     #print(p.pmin([-5, -4]))
     #print(p.pmin([-5, 2]))
     #print(p.pmin([10, 12]))
