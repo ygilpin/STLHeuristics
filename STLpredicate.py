@@ -486,9 +486,9 @@ if __name__ == '__main__':
     from scipy.optimize import minimize
     # Available Times
     t1 = 0
-    t2 = 300 
-    #length =300
-    #step = 2
+    t2 = 9 
+    length = 10
+    step = 1.5 
     robustnessType = 'pw'
     mM = 'n'
 
@@ -498,7 +498,7 @@ if __name__ == '__main__':
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = mM)
     p = r1*r2*r3
     r2.plot3D(-1, 0.5, -1, 0.5, 10)
-    """#print(p.pmin([-5, -4]))
+    #print(p.pmin([-5, -4]))
     #print(p.pmin([-5, 2]))
     #print(p.pmin([10, 12]))
     #sln = p.x_rw(0,0,4,5)
@@ -518,4 +518,4 @@ if __name__ == '__main__':
     print(r3.RhoV(sln))
     print('Combined Robustness Vector')
     print(p.RhoV(sln))
-    p.plotsln3D(sln)"""
+    p.plotsln3D(sln)
