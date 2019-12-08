@@ -18,7 +18,7 @@ class STLpredicate:
         self.right = right
         self.robType = robType # Type of robustness: pw is pointwise, t is traditional
         self.minMaxType = minMaxType # Type of min/max : 'n' for normal, 'ag', 'sm'
-        self.k = 2
+        self.k = 4
 
     def pmin(self, v):
         if self.minMaxType == 'n': 
@@ -505,7 +505,7 @@ if __name__ == '__main__':
     #print(p.robustness(sln))
     
     # Now time to run optimization
-    sln = p.WPF(0,0,step,length)
+    sln = p.TrajOptSS(0,0,step,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     print("Solution")
