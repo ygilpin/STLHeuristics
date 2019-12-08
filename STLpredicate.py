@@ -421,7 +421,7 @@ class STLpredicate:
         pop_size = 20*length
         n_cross = 5 # Number of forced cross-overs
         cr = 0.8
-        max_iter = 6000
+        max_iter = 3000
 
         # Generate Initial Population
         pop = []
@@ -486,19 +486,18 @@ if __name__ == '__main__':
     from scipy.optimize import minimize
     # Available Times
     t1 = 0
-    t2 = 300 
-    #length =300
-    #step = 2
+    t2 = 9 
+    length = 10
+    step = 1.5
     robustnessType = 'pw'
     mM = 'n'
 
     # Some predicates based on these points
     r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType, minMaxType = mM)
-    r2 = STLpredicate.rect(t1,t2, 'e', 1, 2, 1, 2, robType=robustnessType, minMaxType = mM)
+    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType, minMaxType = mM)
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = mM)
     p = r1*r2*r3
-    r2.plot3D(-1, 0.5, -1, 0.5, 10)
-    """#print(p.pmin([-5, -4]))
+    #print(p.pmin([-5, -4]))
     #print(p.pmin([-5, 2]))
     #print(p.pmin([10, 12]))
     #sln = p.x_rw(0,0,4,5)
@@ -507,7 +506,7 @@ if __name__ == '__main__':
     #print(p.robustness(sln))
     
     # Now time to run optimization
-    sln = p.WPF(0,0,step,length)
+    sln = p.TrajOptSS(0,0,step,length)
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     print("Solution")
@@ -518,4 +517,4 @@ if __name__ == '__main__':
     print(r3.RhoV(sln))
     print('Combined Robustness Vector')
     print(p.RhoV(sln))
-    p.plotsln3D(sln)"""
+    p.plotsln3D(sln)
