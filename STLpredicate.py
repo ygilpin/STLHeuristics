@@ -479,25 +479,132 @@ class STLpredicate:
                 converged = True
 
         return pop[np.argmin(score)]
+    
+    # Genetic Evolution 
+    def mutate(self, pop, popscore, popsize, elite, eliteScoreV, length):
+        for i in range(0, popsize):
+            if i == elite:
+                pop[elite] = self.WPFT(pop[elite], popscore[elite], 100)
+                #print("Not applying mutation to elite: ", elite)
+                continue
+            for j in range(1, length):
+                pop[i][:,j] = pop[i][:,j] + 0.1*abs(10 - popscore[i][j])*(np.random.ranf() -0.5)
+                #pop[i][:,j] = pop[i][:,j] + 0.2*(np.random.ranf((1,2)) -0.5)
+        return pop
+
+    def mutateAgent(self, agent, length):
+        for j in range(1, length):
+            agent[:,j] = agent[:,j] + 0.1*abs(10 - popscore[i][j])*(np.random.ranf() -0.5)
+        return agent
 
 
+    def reproduce(self, pop, popscore, p1, p2, length):
+        child1 = np.empty((2,length)) 
+        child2 = np.empty((2,length)) 
+        for index in range(0, length):
+            #"""
+            beta = np.random.ranf()*1.5
+            child1 = pop[p1]*beta + (1-beta)*pop[p2]
+            child2 = pop[p1]*(1-beta) + beta*pop[p2]
+            """ 
+            x = popscore[p1][index]
+            y = popscore[p2][index]
+            if x > y:
+                if 1 - y/x > np.random.ranf():
+                    child[:,index] = pop[p1][:,index]
+                else:
+                    child[:,index] = pop[p2][:,index]
+            else:
+                if 1 - x/y > np.random.ranf():
+                    child[:, index] = pop[p2][:,index]
+                else:
+                    child[:,index] = pop[p1][:,index]
+            """        
+        return [child1, child2]
+
+    def WPFT(self, agent, agentScoreV, n):
+        j = 0
+        agentcp = cp.deepcopy(agent)
+        imin = np.argmin(agentScoreV[1:])
+        agentcpScoreV = self.RhoV(agentcp)
+        while agentScoreV[imin] >= agentcpScoreV[imin] and j < n-1:
+            agentcp = cp.deepcopy(agent) # Reset the copy
+            pointC = 0.001*np.random.rand(1,2) - 0.0005
+            agentcp[:, imin] = agentcp[:, imin] + pointC
+            agentcpScoreV = self.RhoV(agentcp)
+            #print('j: ', j, ' Current: ', agentScoreV[imin], 'Proposed: ', agentcpScoreV[imin])
+            j = j + 1
+        if agentScoreV[imin] < agentcpScoreV[imin]:
+            #print('WPF improved')
+            return agentcp
+        return agent
+
+
+    def geneticEvo(self, xinit, yinit, step, length):
+        # Generate initial population
+        pop_size = 20*length
+        pop = []
+        popscore = []
+        pScoreV = []
+        for i in range(pop_size):
+            pop.append(self.x_rw(xinit, yinit, step, length))
+            popscore.append(self.RhoV(pop[i]))
+            pScoreV.append(self.pmin(popscore[i]))
+        
+        converged = False
+        maxiter = 500
+        j = 0
+        elite = 0
+
+        while j < maxiter:
+            # Evaluate Population
+            for i in range(pop_size):
+                popscore[i] = self.RhoV(pop[i])
+                pScoreV[i] = self.pmin(popscore[i])
+
+            # Parents
+            pIndices = np.argsort(pScoreV)
+
+            # Generate Children
+            for i in range(0, pop_size//3, 2):
+                randint = np.random.randint(0, 6)
+                randadd = np.random.randint(1,6)
+                p1 = pIndices[-randint]
+                p2 = pIndices[-(randint + randadd)]
+                k1 = pIndices[i]
+                k2 = pIndices[i+1]
+                children = self.reproduce(pop, popscore, p1, p2, length)
+                pop[k1] = children[0] 
+                pop[k2] = children[1]
+
+
+            # Evaluate Population
+            for i in range(pop_size):
+                popscore[i] = self.RhoV(pop[i])
+                pScoreV[i] = self.pmin(popscore[i])
+
+            elite = np.argmax(pScoreV)
+            print('n: ', j, ' Best: ', elite, ' ', pScoreV[elite], ' avg: ', np.mean(pScoreV), ' std: ', np.std(pScoreV))
+            j = j + 1
+        pIndices = np.argsort(pScoreV)
+        return pop[pIndices[-1]]
 
 if __name__ == '__main__':
     from scipy.optimize import minimize
     # Available Times
     t1 = 0
-    t2 = 99 
+    t2 = 9
     length = 10
     step = 2
     robustnessType = 'pw'
-    mM = 'n'
+    mM = 'el'
 
     # Some predicates based on these points
     r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType, minMaxType = mM)
     r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType, minMaxType = mM)
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = mM)
     p = r1*r2*r3
-    r2.plot3D(0, 10, 0, 10, 100)
+    #r2.plot3D(0, 10, 0, 10, 100)
     #print(p.pmin([-5, -4]))
     #print(p.pmin([-5, 2]))
     #print(p.pmin([10, 12]))
@@ -507,7 +614,8 @@ if __name__ == '__main__':
     #print(p.robustness(sln))
     
     # Now time to run optimization
-    """sln = p.TrajOptSS(0,0,step,length)
+    sln = p.geneticEvo(0,0,step,length)
+    p.minMaxType = 'n'
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     print("Solution")
@@ -518,4 +626,4 @@ if __name__ == '__main__':
     print(r3.RhoV(sln))
     print('Combined Robustness Vector')
     print(p.RhoV(sln))
-    p.plotsln3D(sln)"""
+    p.plotsln3D(sln)
