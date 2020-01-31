@@ -18,7 +18,7 @@ class STLpredicate:
         self.right = right
         self.robType = robType # Type of robustness: pw is pointwise, t is traditional
         self.minMaxType = minMaxType # Type of min/max : 'n' for normal, 'ag', 'sm'
-        self.k = 4
+        self.k = 8
 
     def pmin(self, v):
         if self.minMaxType == 'n': 
@@ -44,8 +44,15 @@ class STLpredicate:
             return -math.log(sm)/self.k
             
     def pmax(self, v):
-        return -self.pmin(v)
+        if self.minMaxType == 'n': 
+            return max(v)
 
+        if self.minMaxType == 'el':
+            sm = 0
+            for element in v:
+                sm += math.exp(self.k*element)
+            return math.log(sm)/self.k
+            
     def myRho(self, x, t):
         # Calculate the robustness of myself
         # Should only be called when I have no left or right branch
@@ -126,7 +133,7 @@ class STLpredicate:
                 minMaxType = self.minMaxType)
 
     def __add__(self, other):
-        #print("Disjunction between two predicates")
+        print("Disjunction between two predicates")
         return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='d',
                 left=self, right=other, robType = self.robType, minMaxType=self.minMaxType)
 
@@ -218,7 +225,7 @@ class STLpredicate:
         plt.show()
         print(self.RhoV(x))
 
-    def plotsln3D(self, x):
+    def plotsln3D(self, x, s='show'):
         X = self.plant(x)
         Z = []
         for t in range(0,x.shape[1]):
@@ -230,7 +237,10 @@ class STLpredicate:
         ax.set_xlabel('x')
         ax.set_ylabel('y')
         ax.set_zlabel('Robustness')
-        plt.show()
+        if s == 'show':
+            plt.show()
+        else: 
+            plt.savefig(s + '.png', dpi=150)
 
     def diffEvoBB(self,xinit, yinit, step, length):
         print("Differential Evolution Blackbox")
@@ -492,9 +502,10 @@ class STLpredicate:
                 #pop[i][:,j] = pop[i][:,j] + 0.2*(np.random.ranf((1,2)) -0.5)
         return pop
 
-    def mutateAgent(self, agent, length):
+    def mutateAgent(self, agent, popscore, length):
         for j in range(1, length):
-            agent[:,j] = agent[:,j] + 0.1*abs(10 - popscore[i][j])*(np.random.ranf() -0.5)
+            #agent[:,j] = agent[:,j] + 0.01*abs(10 - popscore[i][j])*(np.random.ranf() -0.5)
+            agent[:,j] = agent[:,j] + 0.3*(np.random.ranf((1,2)) -0.5)
         return agent
 
 
@@ -502,7 +513,6 @@ class STLpredicate:
         child1 = np.empty((2,length)) 
         child2 = np.empty((2,length)) 
         for index in range(0, length):
-            #"""
             beta = np.random.ranf()*1.5
             child1 = pop[p1]*beta + (1-beta)*pop[p2]
             child2 = pop[p1]*(1-beta) + beta*pop[p2]
@@ -552,7 +562,7 @@ class STLpredicate:
             pScoreV.append(self.pmin(popscore[i]))
         
         converged = False
-        maxiter = 500
+        maxiter = 1000
         j = 0
         elite = 0
 
@@ -562,6 +572,8 @@ class STLpredicate:
                 popscore[i] = self.RhoV(pop[i])
                 pScoreV[i] = self.pmin(popscore[i])
 
+            elite = np.argmax(pScoreV)
+            print('n: ', j, ' Best: ', elite, ' ', pScoreV[elite], ' avg: ', np.mean(pScoreV), ' std: ', np.std(pScoreV))
             # Parents
             pIndices = np.argsort(pScoreV)
 
@@ -574,23 +586,48 @@ class STLpredicate:
                 k1 = pIndices[i]
                 k2 = pIndices[i+1]
                 children = self.reproduce(pop, popscore, p1, p2, length)
-                pop[k1] = children[0] 
-                pop[k2] = children[1]
+                # Mutate Children
+                pop[k1] = self.mutateAgent(children[0], popscore, length)
+                pop[k2] = self.mutateAgent(children[1], popscore, length)
 
+            for i in range(pop_size//3, pop_size*2//3):
+                # Train Surivors
+                k = pIndices[i]
+                pop[k] = self.WPFT(pop[k], popscore[k], 100)
 
-            # Evaluate Population
-            for i in range(pop_size):
-                popscore[i] = self.RhoV(pop[i])
-                pScoreV[i] = self.pmin(popscore[i])
-
-            elite = np.argmax(pScoreV)
-            print('n: ', j, ' Best: ', elite, ' ', pScoreV[elite], ' avg: ', np.mean(pScoreV), ' std: ', np.std(pScoreV))
             j = j + 1
         pIndices = np.argsort(pScoreV)
         return pop[pIndices[-1]]
 
+    def saveRes(self, sln, PATH = './results/'):
+        path = PATH + str(datetime.date.today()) + '/'
+        # Create target directory & all intermediate directories if don't exists
+        if not os.path.exists(path):
+            os.makedirs(path)
+            print("Directory " , path ,  " Created ")
+        else:    
+            print("Directory " , path ,  " already exists")   
+        fid = open(path + 'output', 'a')
+        fid.write(str(datetime.datetime.now().time()) + '\n')
+        fid.write('Final Robustness: '+ str(p.robustness(sln))+ '\n')
+        fid.write('Final cost: '+ str(p.cost(sln))+ '\n')
+        fid.write('Solution')
+        fid.write(str(p.plant(sln)) + '\n')
+        fid.write('Robustness of predicates 1 (obstacle), 2 (eventually), 3 (speed)\n')
+        fid.write(str(r1.RhoV(sln)) + '\n')
+        fid.write(str(r2.RhoV(sln))+ '\n')
+        fid.write(str(r3.RhoV(sln))+ '\n')
+        fid.write('Combined Robustness Vector\n')
+        fid.write(str(p.RhoV(sln)) + '\n\n')
+        fid.close()
+        p.plotsln3D(sln, path + 'outputGraphs' + str(datetime.datetime.now().time()))
+
+
+
 if __name__ == '__main__':
     from scipy.optimize import minimize
+    import datetime
+    import os
     # Available Times
     t1 = 0
     t2 = 9
@@ -615,7 +652,6 @@ if __name__ == '__main__':
     
     # Now time to run optimization
     sln = p.geneticEvo(0,0,step,length)
-    p.minMaxType = 'n'
     print('Final Robustness: ', p.robustness(sln))
     print('Final cost: ', p.cost(sln))
     print("Solution")
@@ -627,3 +663,4 @@ if __name__ == '__main__':
     print('Combined Robustness Vector')
     print(p.RhoV(sln))
     p.plotsln3D(sln)
+    p.saveRes(sln)
