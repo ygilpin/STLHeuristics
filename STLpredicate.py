@@ -17,14 +17,14 @@ class STLpredicate:
         self.left = left # other STL predicates for conjuction/disjunction
         self.right = right
         self.robType = robType # Type of robustness: pw is pointwise, t is traditional
-        self.minMaxType = minMaxType # Type of min/max : 'n' for normal, 'ag', 'sm'
-        self.k = 8
+        self.k = 10
+        self.alpha = 10 
 
-    def pmin(self, v):
-        if self.minMaxType == 'n': 
+    def pmin(self, v, mMT = 'n'):
+        if mMT == 'n': 
             return min(v)
         
-        if self.minMaxType == 'ag':
+        if mMT == 'ag':
             normfact = max(np.abs(v))
             v = np.divide(v, normfact)
             pos = True
@@ -37,23 +37,41 @@ class STLpredicate:
             else:
                 return -math.sqrt(abs(np.prod(v)))
 
-        if self.minMaxType == 'el':
+        if mMT == 'el' or mMT == 'vk':
             sm = 0
             for element in v:
                 sm += math.exp(-self.k*element)
             return -math.log(sm)/self.k
-            
-    def pmax(self, v):
-        if self.minMaxType == 'n': 
+
+        if mMT == 'wk':
+            num = 0
+            denom = 0
+            for element in v:
+                expnt = math.exp(-self.alpha*element)
+                num += element*expnt
+                denom += expnt
+            return num/denom
+
+    def pmax(self, v, mMT = 'n'):
+        if mMT == 'n': 
             return max(v)
 
-        if self.minMaxType == 'el':
+        if mMT == 'el':
             sm = 0
             for element in v:
                 sm += math.exp(self.k*element)
             return math.log(sm)/self.k
+
+        if mMT == 'wk' or mMT == 'vk':
+            num = 0
+            denom = 0
+            for element in v:
+                expnt = math.exp(self.alpha*element)
+                num += element*expnt
+                denom += expnt
+            return num/denom
             
-    def myRho(self, x, t):
+    def myRho(self, x, t, mMT):
         # Calculate the robustness of myself
         # Should only be called when I have no left or right branch
         rhoVal = 'Nan'
@@ -85,78 +103,77 @@ class STLpredicate:
         #print("myRho called", rhoVal)
         return rhoVal
 
-    def Rho(self, x, t):
+    def Rho(self, x, t, mMT):
         #print("Robustness function called")
         # Force the calcluation of left and right 
         leftRho = 'Nan'
         rightRho = 'Nan'
         if self.left and self.right:
-            leftRho = self.left.Rho(x,t)
-            rightRho = self.right.Rho(x,t)
+            leftRho = self.left.Rho(x, t, mMT)
+            rightRho = self.right.Rho(x, t, mMT)
             if leftRho != 'Nan' and rightRho != 'Nan':
                 if self.cdn == 'c':
-                    return self.pmin([leftRho, rightRho])
+                    return self.pmin([leftRho, rightRho], mMT)
                 elif self.cdn == 'd':
-                    return self.pmax([leftRho, rightRho])
+                    return self.pmax([leftRho, rightRho], mMT)
             elif leftRho  == 'Nan' and rightRho != 'Nan':
                 return rightRho
             elif leftRho != 'Nan' and rightRho == 'Nan':
                 return leftRho 
         if self.left:
             if self.cdn == 'n':
-                return -self.left.Rho(x,t)
-            return self.left.Rho(x,t)
+                return -self.left.Rho(x,t, mMT)
+            return self.left.Rho(x,t, mMT)
         if self.right:
             if self.cdn == 'n':
-                return -self.right.Rho(x,t)
-            return self.right.Rho(x,t)
-        return self.myRho(x,t)
+                return -self.right.Rho(x,t, mMT)
+            return self.right.Rho(x,t, mMT)
+        return self.myRho(x,t, mMT)
 
-    def RhoV(self,x):
+    def RhoV(self, x, mMT):
         traj = self.plant(x)
         p = []
         for t in range(0, x.shape[1]):
-            p.append(self.Rho(traj,t))
+            p.append(self.Rho(traj,t, mMT))
         return p
 
-    def robustness(self,x):
-        tmp = self.pmin(self.RhoV(x))
+    def robustness(self,x, mMT):
+        tmp = self.pmin(self.RhoV(x, mMT))
         return tmp
 
-    def robustnessflt(self,xflt):
+    def robustnessflt(self,xflt, mMT):
         # Same robustness, but flattened version
         x = np.reshape(xflt, (2,-1)) 
-        return self.pmin(self.RhoV(x))
+        return self.pmin(self.RhoV(x, mMT))
 
     def __invert__(self):
-        return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self, robType = self.robType,
-                minMaxType = self.minMaxType)
+        return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self, robType = self.robType)
 
     def __add__(self, other):
         print("Disjunction between two predicates")
         return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='d',
-                left=self, right=other, robType = self.robType, minMaxType=self.minMaxType)
+                left=self, right=other, robType = self.robType)
 
     def __mul__(self, other):
         #print("Conjunction between two predicates")
         return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='c',
-                left=self, right=other, robType = self.robType, minMaxType=self.minMaxType)
+                left=self, right=other, robType = self.robType)
 
-    def rect(t1,t2,ae,x1,x2,y1,y2, robType, minMaxType = 'n'):
+    def rect(t1,t2,ae,x1,x2,y1,y2, robType):
         # First the equations for the lines are needed
         # Top line
-        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0]), y2, robType=robType, minMaxType=minMaxType)
+        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0]), y2, robType=robType)
         # Bottom line
-        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0]), -y1, robType=robType, minMaxType=minMaxType)
+        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0]), -y1, robType=robType)
         # Left line
-        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0]), -x1, robType=robType, minMaxType=minMaxType)
+        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0]), -x1, robType=robType)
         # Right line
-        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0]), x2, robType=robType, minMaxType=minMaxType)
+        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0]), x2, robType=robType)
         return p1 * p2 * p3 * p4
 
-    def cost(self, xflt):
+    def cost(self, xflt, mMT):
         x = np.reshape(xflt, (2, -1))
-        p = self.robustness(x)
+        p = self.robustness(x, mMT)
         return - p*(self.t2 - self.t1 + 1)
 
     def expsum(self,v):
@@ -225,11 +242,11 @@ class STLpredicate:
         plt.show()
         print(self.RhoV(x))
 
-    def plotsln3D(self, x, s='show'):
+    def plotsln3D(self, x, mMT, s='show'):
         X = self.plant(x)
         Z = []
         for t in range(0,x.shape[1]):
-            Z.append(self.Rho(X,t))
+            Z.append(self.Rho(X,t, mMT))
 
         fig = plt.figure()
         ax = plt.axes(projection='3d')
@@ -242,7 +259,7 @@ class STLpredicate:
         else: 
             plt.savefig(s + '.png', dpi=150)
 
-    def diffEvoBB(self,xinit, yinit, step, length):
+    def diffEvoBB(self,xinit, yinit, step, length, mMT):
         print("Differential Evolution Blackbox")
         # Black box differential evolution function
         pop_size = 20*length
@@ -256,7 +273,7 @@ class STLpredicate:
         score = []
         for i in range(pop_size):
             pop.append(self.x_rw(xinit, yinit, step, length))
-            score.append(self.robustness(pop[i]))
+            score.append(self.robustness(pop[i], mMT))
 
         # Evolution 
         print("Evolution Time")
@@ -299,7 +316,7 @@ class STLpredicate:
                         tv[:,j] = vc[:,j]
 
                 # Compare the scores
-                tv_score = self.robustness(tv)
+                tv_score = self.robustness(tv, mMT)
                 if tv_score > score[i]:
                     score[i] = tv_score
                     pop[i] = tv
@@ -310,7 +327,7 @@ class STLpredicate:
 
         return pop[np.argmax(score)]
 
-    def hillClimbingPW(self,xinit, yinit, step, length):
+    def hillClimbingPW(self,xinit, yinit, step, length, mMT):
         # Pointwise differential evolution function
         # That is to say differential evolution is applied
         # to each point individually
@@ -322,7 +339,7 @@ class STLpredicate:
         score = []
         for i in range(pop_size):
             pop.append(self.x_rw(xinit, yinit, step, length))
-            score.append(self.RhoV(pop[i]))
+            score.append(self.RhoV(pop[i], mMT))
         
         converged = False
         pindex = [i for i in range(pop_size)]
@@ -353,9 +370,9 @@ class STLpredicate:
                     # Generate Test Point
                     pd = pop[p1][:,point] + f*(pop[p2][:,point] - pop[p3][:,point])
                     newCandidate[:,point] = newCandidate[:,point] + pd
-                    newCandidateScoreV = self.RhoV(newCandidate)
-                    newCandidateScore = self.pmin(newCandidateScoreV)
-                    candidateScore = self.pmin(score[candidate])
+                    newCandidateScoreV = self.RhoV(newCandidate, mMT)
+                    newCandidateScore = self.pmin(newCandidateScoreV, mMT)
+                    candidateScore = self.pmin(score[candidate], mMT)
 
 
                     # Compare Scores
@@ -374,18 +391,18 @@ class STLpredicate:
 
         return pop[np.argmax(((min(score[p]) for p in parents)))]
 
-    def WPF(self, xinit, yinit, step, length):
+    def WPF(self, xinit, yinit, step, length, mMT):
         pop_size = 30*length
         maxiter = 6000 
         
         # Generate Initial Guess 
         print("Generating a good initial guess")
         bCand = self.x_rw(xinit, yinit, step, length) 
-        bScore = self.robustness(bCand)
+        bScore = self.robustness(bCand, mMT)
 
         for i in range(1,pop_size):
             nCand = self.x_rw(xinit, yinit, step, length)
-            nScore = self.robustness(nCand)
+            nScore = self.robustness(nCand, mMT)
             if nScore > bScore:
                 bCand = nCand
                 bScore = nScore
@@ -396,7 +413,7 @@ class STLpredicate:
         n = 0
         while maxiter > n:
             # Find the worst point
-            pv = self.RhoV(bCand) # robutness vector
+            pv = self.RhoV(bCand, mMT) # robutness vector
             #print('PV: ', pv)
             #print('pv[1:] ', pv[1:])
             imin = np.argmin(pv[1:]) +1 # index of the worst point
@@ -407,13 +424,13 @@ class STLpredicate:
             # Generate a potentially better point
             pointC = np.random.rand(1,2) - 0.5
             bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
-            pointSV = self.RhoV(bCandPoint)
+            pointSV = self.RhoV(bCandPoint, mMT)
 
             while pv[imin] > pointSV[imin] and maxiter > n:
                 bCandPoint = cp.deepcopy(bCand) # Reset the copy
                 pointC = 0.001*np.random.rand(1,2) - 0.0005
                 bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
-                pointSV = self.RhoV(bCandPoint)
+                pointSV = self.RhoV(bCandPoint, mMT)
                 print('n: ', n, ' Current: ', pv[imin], 'Proposed: ', pointSV[imin])
                 n = n + 1
 
@@ -424,7 +441,7 @@ class STLpredicate:
 
         return bCand
 
-    def TrajOptSS(self, xinit, yinit, step, length):
+    def TrajOptSS(self, xinit, yinit, step, length, mMT):
         # Black box differential evolution function
         # That uses the sum of the robustness instead
         # of the minimum or other approximation at the final step
@@ -477,12 +494,12 @@ class STLpredicate:
                         tv[:,j] = vc[:,j]
 
                 # Compare the scores
-                tv_score = self.expsum(self.RhoV(tv))
+                tv_score = self.expsum(self.RhoV(tv, mMT))
                 if tv_score < score[i]:
                     score[i] = tv_score
                     pop[i] = tv
             k = np.argmin(score)
-            act = self.robustness(pop[k])
+            act = self.robustness(pop[k], mMT)
             print('n: ', n, ' avg: ', np.mean(score), ' min: ', score[k], ' Actual: ', act)
             n += 1
             if act > 1 or n >= max_iter:
@@ -532,16 +549,16 @@ class STLpredicate:
             """        
         return [child1, child2]
 
-    def WPFT(self, agent, agentScoreV, n):
+    def WPFT(self, agent, agentScoreV, n, mMT):
         j = 0
         agentcp = cp.deepcopy(agent)
         imin = np.argmin(agentScoreV[1:])
-        agentcpScoreV = self.RhoV(agentcp)
+        agentcpScoreV = self.RhoV(agentcp, mMT)
         while agentScoreV[imin] >= agentcpScoreV[imin] and j < n-1:
             agentcp = cp.deepcopy(agent) # Reset the copy
             pointC = 0.001*np.random.rand(1,2) - 0.0005
             agentcp[:, imin] = agentcp[:, imin] + pointC
-            agentcpScoreV = self.RhoV(agentcp)
+            agentcpScoreV = self.RhoV(agentcp, mMT)
             #print('j: ', j, ' Current: ', agentScoreV[imin], 'Proposed: ', agentcpScoreV[imin])
             j = j + 1
         if agentScoreV[imin] < agentcpScoreV[imin]:
@@ -550,7 +567,7 @@ class STLpredicate:
         return agent
 
 
-    def geneticEvo(self, xinit, yinit, step, length):
+    def geneticEvo(self, xinit, yinit, step, length, mMT):
         # Generate initial population
         pop_size = 20*length
         pop = []
@@ -558,19 +575,19 @@ class STLpredicate:
         pScoreV = []
         for i in range(pop_size):
             pop.append(self.x_rw(xinit, yinit, step, length))
-            popscore.append(self.RhoV(pop[i]))
-            pScoreV.append(self.pmin(popscore[i]))
+            popscore.append(self.RhoV(pop[i], mMT))
+            pScoreV.append(self.pmin(popscore[i], mMT))
         
         converged = False
-        maxiter = 1000
+        maxiter = 100
         j = 0
         elite = 0
 
         while j < maxiter:
             # Evaluate Population
             for i in range(pop_size):
-                popscore[i] = self.RhoV(pop[i])
-                pScoreV[i] = self.pmin(popscore[i])
+                popscore[i] = self.RhoV(pop[i], mMT)
+                pScoreV[i] = self.pmin(popscore[i], mMT)
 
             elite = np.argmax(pScoreV)
             print('n: ', j, ' Best: ', elite, ' ', pScoreV[elite], ' avg: ', np.mean(pScoreV), ' std: ', np.std(pScoreV))
@@ -593,14 +610,15 @@ class STLpredicate:
             for i in range(pop_size//3, pop_size*2//3):
                 # Train Surivors
                 k = pIndices[i]
-                pop[k] = self.WPFT(pop[k], popscore[k], 100)
+                pop[k] = self.WPFT(pop[k], popscore[k], 100, mMT)
 
             j = j + 1
         pIndices = np.argsort(pScoreV)
         return pop[pIndices[-1]]
 
-    def saveRes(self, sln, PATH = './results/'):
-        path = PATH + str(datetime.date.today()) + '/'
+    def saveRes(self, sln, mMT, PATH = './results/'):
+        datestamp = str(datetime.date.today())
+        path = PATH + datestamp + '/'
         # Create target directory & all intermediate directories if don't exists
         if not os.path.exists(path):
             os.makedirs(path)
@@ -609,18 +627,21 @@ class STLpredicate:
             print("Directory " , path ,  " already exists")   
         fid = open(path + 'output', 'a')
         fid.write(str(datetime.datetime.now().time()) + '\n')
-        fid.write('Final Robustness: '+ str(p.robustness(sln))+ '\n')
-        fid.write('Final cost: '+ str(p.cost(sln))+ '\n')
+        fid.write('Final Robustness: ' + mMT + ' ' + str(p.robustness(sln, mMT))+ '\n')
+        fid.write('Final Robustness: ' + 'el' + ' ' + str(p.robustness(sln, 'el'))+ '\n')
+        fid.write('Final Robustness: ' + 'n' + ' ' + str(p.robustness(sln, 'n'))+ '\n')
+        fid.write('Final cost: '+ str(p.cost(sln, mMT))+ '\n')
         fid.write('Solution')
         fid.write(str(p.plant(sln)) + '\n')
         fid.write('Robustness of predicates 1 (obstacle), 2 (eventually), 3 (speed)\n')
-        fid.write(str(r1.RhoV(sln)) + '\n')
-        fid.write(str(r2.RhoV(sln))+ '\n')
-        fid.write(str(r3.RhoV(sln))+ '\n')
+        fid.write(str(r1.RhoV(sln, mMT)) + '\n')
+        fid.write(str(r2.RhoV(sln, mMT))+ '\n')
+        fid.write(str(r3.RhoV(sln, mMT))+ '\n')
         fid.write('Combined Robustness Vector\n')
-        fid.write(str(p.RhoV(sln)) + '\n\n')
+        fid.write(str(p.RhoV(sln, mMT)) + '\n\n')
         fid.close()
-        p.plotsln3D(sln, path + 'outputGraphs' + str(datetime.datetime.now().time()))
+        timestamp = str(datetime.datetime.now().time()).replace(':', '_')
+        p.plotsln3D(sln, mMT, path + 'outputGraphs' + timestamp)
 
 
 
@@ -634,33 +655,28 @@ if __name__ == '__main__':
     length = 10
     step = 2
     robustnessType = 'pw'
-    mM = 'el'
+    mMT = 'vk'
+    print("mMT: " + mMT)
 
     # Some predicates based on these points
-    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType, minMaxType = mM)
-    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType, minMaxType = mM)
-    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 2, robType=robustnessType, minMaxType = mM)
+    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3, robType=robustnessType)
+    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9, robType=robustnessType)
+    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 1.5, robType=robustnessType)
     p = r1*r2*r3
-    #r2.plot3D(0, 10, 0, 10, 100)
-    #print(p.pmin([-5, -4]))
-    #print(p.pmin([-5, 2]))
-    #print(p.pmin([10, 12]))
-    #sln = p.x_rw(0,0,4,5)
-    #print(sln)
-    #print(p.RhoV(sln))
-    #print(p.robustness(sln))
-    
+
     # Now time to run optimization
-    sln = p.geneticEvo(0,0,step,length)
-    print('Final Robustness: ', p.robustness(sln))
-    print('Final cost: ', p.cost(sln))
+    sln = p.geneticEvo(0,0,step,length, mMT)
+    print('Final Robustness wk: ', p.robustness(sln, 'wk'))
+    print('Final Robustness  n: ', p.robustness(sln, 'n'))
     print("Solution")
     print(p.plant(sln))
     print("Robustness of predicates 1 (obstacle), 2 (eventually), 3 (speed)")
-    print(r1.RhoV(sln))
-    print(r2.RhoV(sln))
-    print(r3.RhoV(sln))
-    print('Combined Robustness Vector')
-    print(p.RhoV(sln))
-    p.plotsln3D(sln)
-    p.saveRes(sln)
+    print(r1.RhoV(sln, 'n'))
+    print(r2.RhoV(sln, 'n'))
+    print(r3.RhoV(sln, 'n'))
+    print('Combined Robustness Vector Normal')
+    print(p.RhoV(sln, 'n'))
+    print('Combined Robustness Vector Exp Log')
+    print(p.RhoV(sln, 'el'))
+    p.plotsln3D(sln, mMT=mMT)
+    p.saveRes(sln, mMT=mMT)
