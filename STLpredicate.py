@@ -17,7 +17,7 @@ class STLpredicate:
         self.left = left # other STL predicates for conjuction/disjunction
         self.right = right
         self.robType = robType # Type of robustness: pw is pointwise, t is traditional
-        self.k = 10
+        self.k = 10 
         self.alpha = 10 
 
     def pmin(self, v, mMT = 'n'):
@@ -174,7 +174,7 @@ class STLpredicate:
     def cost(self, xflt, mMT):
         x = np.reshape(xflt, (2, -1))
         p = self.robustness(x, mMT)
-        return - p*(self.t2 - self.t1 + 1)
+        return - p
 
     def expsum(self,v):
         esum = 0
@@ -191,7 +191,7 @@ class STLpredicate:
                 bnds.append((x0,x0))
             elif i == 2:
                 bnds.append((y0, y0))
-            for j in range(0, length):
+            for j in range(0, length-1):
                 bnds.append((None,None))
         return bnds 
 
@@ -441,7 +441,7 @@ class STLpredicate:
 
         return bCand
 
-    def TrajOptSS(self, xinit, yinit, step, length, mMT):
+    def TrajOptSSDE(self, xinit, yinit, step, length, mMT):
         # Black box differential evolution function
         # That uses the sum of the robustness instead
         # of the minimum or other approximation at the final step
@@ -507,6 +507,29 @@ class STLpredicate:
 
         return pop[np.argmin(score)]
     
+    def TrajOptSSmin(self, xinit, yinit, step, length, mMT):
+        # Black box scipy minimize 
+        # That uses the sum of the robustness instead
+        # of the minimum or other approximation at the final step
+        bnds = self.bounds(xinit, yinit, length)
+        
+        # Generate a good initial guess
+        pop_size = 10*length 
+        pop = []
+        score = []
+        for i in range(pop_size):
+            pop.append(self.x_rw(xinit, yinit, step, length))
+            score.append(self.robustness(pop[i],mMT))
+
+        elite_i = np.argmax(score)
+        print(score[elite_i])
+        guess = pop[elite_i]
+        guessflt = np.reshape(guess, (1, -1))[0]
+        opt = minimize(self.cost, guessflt, args=(mMT),method='L-BFGS-B', bounds=bnds)
+        #opt = minimize(self.expsum, guessflt, method='TNC', bounds=bnds)
+        print(opt.message)
+        return np.reshape(opt.x, (2,-1))
+
     # Genetic Evolution 
     def mutate(self, pop, popscore, popsize, elite, eliteScoreV, length):
         for i in range(0, popsize):
@@ -665,7 +688,7 @@ if __name__ == '__main__':
     p = r1*r2*r3
 
     # Now time to run optimization
-    sln = p.geneticEvo(0,0,step,length, mMT)
+    sln = p.TrajOptSSmin(0,0,step,length, mMT) #p.geneticEvo(0,0,step,length, mMT)
     print('Final Robustness wk: ', p.robustness(sln, 'wk'))
     print('Final Robustness  n: ', p.robustness(sln, 'n'))
     print("Solution")
