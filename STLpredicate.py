@@ -16,25 +16,30 @@ class STLpredicate:
         self.cdn = cdn # conjuction, disjunction or negation
         self.left = left # other STL predicates for conjuction/disjunction
         self.right = right
-        self.k = 10 
-        self.alpha = 10
+        self.k = 10
+        self.alpha = 10 
+        self.R = 10 # Normalization factor
 
     def pmin(self, v, mMT = 'n'):
         if mMT == 'n': 
             return min(v)
         
         if mMT == 'ag':
-            normfact = max(np.abs(v))
-            v = np.divide(v, normfact)
             pos = True
-            for element in v:
-                if element < 0:
+            N = len(v)
+            for element in v: 
+                if element <= 0:
                     pos = False
                     break
-            if pos:
-                return np.mean(v)
+            if ~pos:
+                rsum = 0
+                for element in v:
+                    if element < 0:
+                        rsum += element
+                return rsum/N
             else:
-                return -math.sqrt(abs(np.prod(v)))
+                v = v + np.ones((1,N))
+                return math.pow(abs(np.prod(v)), 1/N) -1
 
         if mMT == 'el' or mMT == 'vk':
             sm = 0
@@ -69,6 +74,24 @@ class STLpredicate:
                 num += element*expnt
                 denom += expnt
             return num/denom
+        
+        if mMT == 'ag':
+            pos = True
+            for element in v: 
+                if element > 0:
+                    pos = False
+                    break
+            if ~pos:
+                rsum = 0
+                for element in v:
+                    if element > 0:
+                        rsum += element
+                return rsum/N
+            else:
+                N = len(v)
+                v = np.ones((1,N)) - v
+                return -math.pow(abs(np.prod(v)), 1/N) +1
+
             
     def myRho(self, x, t, mMT, rbT):
         # Calculate the robustness of myself
@@ -99,8 +122,9 @@ class STLpredicate:
                     rhoVal = self.pmax(pi)
                 else: 
                     print('Error invalid robustness type: ' + rbT)
-        
-        #print("myRho called", rhoVal)
+                    return rhoVal
+        if 'mMT' == 'ag':
+            rhoVal = rhoVal / self.R
         return rhoVal
 
     def Rho(self, x, t, mMT, rbT):
@@ -173,6 +197,7 @@ class STLpredicate:
 
     def cost(self, xflt, mMT, rbT):
         x = np.reshape(xflt, (2, -1))
+        x = np.hstack(([[0],[0]],x))
         p = self.robustness(x, mMT, rbT)
         return - p
 
@@ -530,6 +555,15 @@ class STLpredicate:
         print(opt.message)
         return np.reshape(opt.x, (2,-1))
 
+    def VanillaMin(self, xinit, yinit, x0, mMT='vk', rbT='n', mthd='Nelder-Mead'):
+        #bnds = self.bounds(xinit, yinit, length)
+        guessflt = np.reshape(x0[:,1:], (1, -1))
+        opt = minimize(self.cost, guessflt, args=(mMT,rbT),method=mthd)
+        print(opt.message)
+        sln = np.reshape(opt.x, (2,-1))
+        return np.hstack(([[0],[0]],sln))
+
+
     # Genetic Evolution 
     def mutate(self, pop, popscore, popsize, elite, eliteScoreV, length):
         for i in range(0, popsize):
@@ -604,9 +638,9 @@ class STLpredicate:
         converged = False
         maxiter = 100
         j = 0
-        elite = 0
+        elite = np.argmax(pScoreV)
 
-        while j < maxiter:
+        while j < maxiter and pScoreV[elite] < 0:
             # Evaluate Population
             for i in range(pop_size):
                 popscore[i] = self.RhoV(pop[i], mMT, rbT)
@@ -654,7 +688,6 @@ class STLpredicate:
         fid.write('Final Robustness: ' + mMT + ' ' + str(p.robustness(sln, mMT, rbT))+ '\n')
         fid.write('Final Robustness: ' + 'el' + ' ' + str(p.robustness(sln, 'el', rbT))+ '\n')
         fid.write('Final Robustness: ' + 'n' + ' ' + str(p.robustness(sln, 'n', rbT))+ '\n')
-        fid.write('Final cost: '+ str(p.cost(sln, mMT, rbT))+ '\n')
         fid.write('Solution')
         fid.write(str(p.plant(sln)) + '\n')
         fid.write('Robustness of predicates 1 (obstacle), 2 (eventually), 3 (speed)\n')
@@ -667,8 +700,6 @@ class STLpredicate:
         timestamp = str(datetime.datetime.now().time()).replace(':', '_')
         p.plotsln3D(sln, mMT, rbT, path + 'outputGraphs' + timestamp)
 
-
-
 if __name__ == '__main__':
     from scipy.optimize import minimize
     import datetime
@@ -678,7 +709,7 @@ if __name__ == '__main__':
     t2 = 9
     length = 10
     step = 2
-    rbT = 'pw'
+    rbT = 'n'
     mMT = 'vk'
     print("mMT: " + mMT)
 
@@ -689,7 +720,9 @@ if __name__ == '__main__':
     p = r1*r2*r3
 
     # Now time to run optimization
-    sln = p.geneticEvo(0,0,step,length, mMT, rbT)
+    sln1 = p.geneticEvo(0,0,step,length, mMT, rbT)
+    #sln = p.TrajOptSSmin(0,0,step,length, mMT, rbT)
+    sln = p.VanillaMin(0,0,sln1)
     print('Final Robustness wk: ', p.robustness(sln, 'wk', rbT))
     print('Final Robustness  n: ', p.robustness(sln, 'n', rbT))
     print("Solution")
