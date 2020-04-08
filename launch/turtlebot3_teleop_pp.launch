@@ -1,0 +1,9 @@
+<launch>
+  <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
+  <param name="model" value="$(arg model)"/>
+
+  <!-- turtlebot3_teleop_pp does not have an velocity smoothing -->
+  <param name="/use_sim_time" type="bool" value="True"/>
+  <node pkg="turtlebot3_teleop" type="turtlebot3_teleop_pp" name="turtlebot3_teleop_pp"  output="screen">
+  </node>
+</launch>
