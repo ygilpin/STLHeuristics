@@ -27,7 +27,6 @@ def parseFile(Path):
         if line[0:2] == 'n:':
             words = line.split(' ')
             evo.append([words[2],words[6],words[10],words[14]])
-        elif line[
     if PRINT:
         print(evo)
     datafile.close()

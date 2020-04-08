@@ -16,11 +16,13 @@ class STLpredicate:
         self.cdn = cdn # conjuction, disjunction or negation
         self.left = left # other STL predicates for conjuction/disjunction
         self.right = right
-        self.k = 10
-        self.alpha = 10 
+        self.k = 25 
+        self.alpha = 25 
         self.R = 10 # Normalization factor
+        self.T = 1 # Sample Rate
 
     def pmin(self, v, mMT = 'n'):
+        v = np.array(v)
         if mMT == 'n': 
             return min(v)
         
@@ -42,10 +44,18 @@ class STLpredicate:
                 return math.pow(abs(np.prod(v)), 1/N) -1
 
         if mMT == 'el' or mMT == 'vk':
-            sm = 0
+            #print(v)
+            max_elem = max(v)
+            vprime = -self.k*v + self.k*max_elem
+            vprime = np.exp(vprime)
+            return -math.log(vprime.sum())/self.k + max_elem
+            
+            """sm = 0
             for element in v:
                 sm += math.exp(-self.k*element)
-            return -math.log(sm)/self.k
+                if sm < 0:
+                    print(sm)
+            return -math.log(sm)/self.k"""
 
         if mMT == 'wk':
             num = 0
@@ -57,14 +67,15 @@ class STLpredicate:
             return num/denom
 
     def pmax(self, v, mMT = 'n'):
+        v = np.array(v)
         if mMT == 'n': 
             return max(v)
 
         if mMT == 'el':
-            sm = 0
-            for element in v:
-                sm += math.exp(self.k*element)
-            return math.log(sm)/self.k
+            max_elem = max(v)
+            vprime = self.k*v - self.k*max_elem
+            vprime = np.exp(vprime)
+            return -math.log(vprime.sum())/self.k + max_elem
 
         if mMT == 'wk' or mMT == 'vk':
             num = 0
@@ -186,13 +197,13 @@ class STLpredicate:
     def rect(t1,t2,ae,x1,x2,y1,y2):
         # First the equations for the lines are needed
         # Top line
-        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0]), y2)
+        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0, 0]), y2)
         # Bottom line
-        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0]), -y1)
+        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0, 0]), -y1)
         # Left line
-        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0]), -x1)
+        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0, 0]), -x1)
         # Right line
-        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0]), x2)
+        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0, 0]), x2)
         return p1 * p2 * p3 * p4
 
     def cost(self, xflt, mMT, rbT):
@@ -228,23 +239,34 @@ class STLpredicate:
         x = np.concatenate((x_start, x_tail), axis=1)
         return x
 
-    def x_rw(self, x0, y0, step, length):
-        x = np.ones((1,length))*x0
-        y = np.ones((1,length))*y0
-        x = np.vstack((x,y))
+    def x_rw(self, v0, omega0, step, length):
+        """v = v0
+        theta = theta0
+        x = np.zeros((1,length))
+        y = np.zeros((1,length))
         for k in range(1, length):
-            walk = step*(2*np.random.rand(1,2) - 1)
-            x[:,k] = walk + x[:,k-1]
+            v += step*(np.random.rand() - 0.5)
+            theta += np.pi*(np.random.rand() - 0.5)
+            x[0,k] = x[0,k-1] + v*np.cos(theta)
+            y[0,k] = y[0,k-1] + v*np.sin(theta)"""
+        speed = 0.2*np.ones((1,length)) #0.1*step*(2*np.random.rand(1,length) -1)
+        omega = 0.2*(np.random.rand(1,length) -1)
+        x = np.vstack((speed,omega))
+        x[0,0] = v0
+        x[1,0] = omega0
         return x
 
     
-    def plant(self, pos):
+    def plant(self, vel):
         # This plant simply computes the speed
         # First I need to grow the signal space
-        x = np.concatenate((pos, np.zeros((1, pos.shape[1]))), axis=0)
+        x = np.concatenate((np.zeros((2, vel.shape[1])), vel), axis=0)
+        theta_t = 0
         for t in range(1, x.shape[1]):
-            deltax = (x[:,t] - x[:,t-1])[0:2] 
-            x[2,t] = np.linalg.norm(deltax)
+            omega = x[3,t]
+            x[0,t] = x[0,t-1] + x[2,t]/omega*(np.sin(omega*self.T + theta_t) - np.sin(theta_t))
+            x[1,t] = x[1,t-1] + x[2,t]/omega*(np.cos(theta_t) - np.cos(omega*self.T + theta_t))
+            theta_t += omega*self.T
         return x
 
     def plot3D(self,xmin, xmax, ymin, ymax, points):
@@ -555,11 +577,32 @@ class STLpredicate:
         print(opt.message)
         return np.reshape(opt.x, (2,-1))
 
-    def VanillaMin(self, xinit, yinit, x0, mMT='vk', rbT='n', mthd='Nelder-Mead'):
+    def VanillaMin(self, xinit, yinit, x0, mMT='vk', rbT='n', mthd='SLSQP'):
         #bnds = self.bounds(xinit, yinit, length)
+        self.k = 25 
+        self.alpha = 25 
         guessflt = np.reshape(x0[:,1:], (1, -1))
-        opt = minimize(self.cost, guessflt, args=(mMT,rbT),method=mthd)
-        print(opt.message)
+        options = {'maxiter': 1000}
+        opt = sciOpt.minimize(self.cost, guessflt, args=(mMT,rbT),method=mthd, options=options)
+        """bnds = []
+        for i in range(1,3):
+            for j in range(1, length):
+                bnds.append((0,2))
+        opt = sciOpt.differential_evolution(self.cost, 
+                bounds=bnds, 
+                args=(mMT,rbT), 
+                maxiter=5000,
+                disp=True,
+                polish=True,
+                workers=-1)
+        #print(len((bnds)))
+        #print(len(guessflt))
+        opt = sciOpt.dual_annealing(self.cost,
+                bounds=bnds, 
+                args=(mMT,rbT), 
+                maxiter=5000,
+                x0=guessflt)
+        print(opt.message)"""
         sln = np.reshape(opt.x, (2,-1))
         return np.hstack(([[0],[0]],sln))
 
@@ -572,7 +615,7 @@ class STLpredicate:
                 #print("Not applying mutation to elite: ", elite)
                 continue
             for j in range(1, length):
-                pop[i][:,j] = pop[i][:,j] + 0.1*abs(10 - popscore[i][j])*(np.random.ranf() -0.5)
+                pop[i][:,j] = pop[i][:,j] + 0.05*abs(10 - popscore[i][j])*(np.random.ranf() -0.5)
                 #pop[i][:,j] = pop[i][:,j] + 0.2*(np.random.ranf((1,2)) -0.5)
         return pop
 
@@ -587,7 +630,7 @@ class STLpredicate:
         child1 = np.empty((2,length)) 
         child2 = np.empty((2,length)) 
         for index in range(0, length):
-            beta = np.random.ranf()*1.5
+            beta = np.random.ranf()*0.5
             child1 = pop[p1]*beta + (1-beta)*pop[p2]
             child2 = pop[p1]*(1-beta) + beta*pop[p2]
             """ 
@@ -613,7 +656,7 @@ class STLpredicate:
         agentcpScoreV = self.RhoV(agentcp, mMT, rbT)
         while agentScoreV[imin] >= agentcpScoreV[imin] and j < n-1:
             agentcp = cp.deepcopy(agent) # Reset the copy
-            pointC = 0.001*np.random.rand(1,2) - 0.0005
+            pointC = 0.001*(np.random.rand(1,2) - 0.5)
             agentcp[:, imin] = agentcp[:, imin] + pointC
             agentcpScoreV = self.RhoV(agentcp, mMT, rbT)
             #print('j: ', j, ' Current: ', agentScoreV[imin], 'Proposed: ', agentcpScoreV[imin])
@@ -639,15 +682,25 @@ class STLpredicate:
         maxiter = 100
         j = 0
         elite = np.argmax(pScoreV)
+        stall = 0
+        previousBest = -10
 
-        while j < maxiter and pScoreV[elite] < 0:
+        while j < maxiter and pScoreV[elite] < 0 and stall < 3:
+            #print('Improving Population')
             # Evaluate Population
             for i in range(pop_size):
                 popscore[i] = self.RhoV(pop[i], mMT, rbT)
                 pScoreV[i] = self.pmin(popscore[i], mMT)
 
             elite = np.argmax(pScoreV)
+
             print('n: ', j, ' Best: ', elite, ' ', pScoreV[elite], ' avg: ', np.mean(pScoreV), ' std: ', np.std(pScoreV))
+            if pScoreV[elite] == previousBest:
+                stall += 1
+            else:
+                stall = 0
+            previousBest = pScoreV[elite]
+
             # Parents
             pIndices = np.argsort(pScoreV)
 
@@ -664,10 +717,10 @@ class STLpredicate:
                 pop[k1] = self.mutateAgent(children[0], popscore, length)
                 pop[k2] = self.mutateAgent(children[1], popscore, length)
 
-            for i in range(pop_size//3, pop_size*2//3):
+            for i in range(pop_size//3, pop_size-1):
                 # Train Surivors
                 k = pIndices[i]
-                pop[k] = self.WPFT(pop[k], popscore[k], 100, mMT, rbT)
+                pop[k] = self.WPFT(pop[k], popscore[k], 200, mMT, rbT)
 
             j = j + 1
         pIndices = np.argsort(pScoreV)
@@ -698,31 +751,45 @@ class STLpredicate:
         fid.write(str(p.RhoV(sln, mMT, rbT)) + '\n\n')
         fid.close()
         timestamp = str(datetime.datetime.now().time()).replace(':', '_')
-        p.plotsln3D(sln, mMT, rbT, path + 'outputGraphs' + timestamp)
+        self.plotsln3D(sln, mMT, rbT, path + 'outputGraphs' + timestamp)
 
 if __name__ == '__main__':
-    from scipy.optimize import minimize
+    import scipy.optimize as sciOpt
     import datetime
     import os
     # Available Times
     t1 = 0
-    t2 = 9
-    length = 10
-    step = 2
-    rbT = 'n'
+    t2 = 14 
+    length = 15 
+    step = 0.22
+    rbT = 'pw'
     mMT = 'vk'
     print("mMT: " + mMT)
 
-    # Some predicates based on these points
-    r1 = ~STLpredicate.rect(t1,t2, 'a', 1, 3, 1, 3)
-    r2 = STLpredicate.rect(t1,t2, 'e', 6, 9, 6, 9)
-    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1]), 1.5)
-    p = r1*r2*r3
+    
+
+   # Some predicates based on these points
+    r1 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1.25, 0.5, 1)
+    r2 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
+    r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1,0]), 0.22)
+    r4 = STLpredicate(t1,t2, 'a', np.array([0,0,0,1]), 2.84)
+    r5 = STLpredicate(t1,t2, 'a', np.array([0,0,-1,0]), 0.1)
+    r6 = STLpredicate(t1,t2, 'a', np.array([0,0,0,-1]), 2.84)
+    p = r1*r6*r3*r4*r5*r2
 
     # Now time to run optimization
     sln1 = p.geneticEvo(0,0,step,length, mMT, rbT)
     #sln = p.TrajOptSSmin(0,0,step,length, mMT, rbT)
+    print('Beginning Vanilla Optimization')
     sln = p.VanillaMin(0,0,sln1)
+
+    # Write Solution to file
+    path = './sln.txt'
+    fid = open(path, 'w')
+    sln.tofile(fid)
+    fid.close()
+    
+    # Print Results on Screen
     print('Final Robustness wk: ', p.robustness(sln, 'wk', rbT))
     print('Final Robustness  n: ', p.robustness(sln, 'n', rbT))
     print("Solution")
@@ -731,6 +798,9 @@ if __name__ == '__main__':
     print(r1.RhoV(sln, 'n', rbT))
     print(r2.RhoV(sln, 'n', rbT))
     print(r3.RhoV(sln, 'n', rbT))
+    print(r4.RhoV(sln, 'n', rbT))
+    print(r5.RhoV(sln, 'n', rbT))
+    print(r6.RhoV(sln, 'n', rbT))
     print('Combined Robustness Vector Normal')
     print(p.RhoV(sln, 'n', rbT))
     print('Combined Robustness Vector Exp Log')
