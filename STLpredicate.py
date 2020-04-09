@@ -254,7 +254,8 @@ class STLpredicate:
         x = np.vstack((speed,omega))
         x[0,0] = v0
         x[1,0] = omega0
-        return x
+        #return self.WPFT(x, self.RhoV(x, 'vk', 'pw'), 50, 'vk', 'pw')
+        return x 
 
     
     def plant(self, vel):
@@ -441,52 +442,59 @@ class STLpredicate:
     def WPF(self, xinit, yinit, step, length, mMT, rbT):
         pop_size = 30*length
         maxiter = 6000 
-        
-        # Generate Initial Guess 
-        print("Generating a good initial guess")
-        bCand = self.x_rw(xinit, yinit, step, length) 
-        bScore = self.robustness(bCand, mMT, rbT)
+        stall = 0
+        runningBest = 0
+        runningBestRho = -10
 
-        for i in range(1,pop_size):
-            nCand = self.x_rw(xinit, yinit, step, length)
-            nScore = self.robustness(nCand, mMT, rbT)
-            if nScore > bScore:
-                bCand = nCand
-                bScore = nScore
-        #print("Best initial guess: ", bScore)
-        #print(bCand)
+        while stall < 3:
+            # Generate Initial Guess 
+            print("Generating a good initial guess")
+            bCand = self.x_rw(xinit, yinit, step, length) 
+            bScore = self.robustness(bCand, mMT, rbT)
 
-        converged = False
-        n = 0
-        while maxiter > n:
-            # Find the worst point
-            pv = self.RhoV(bCand, mMT, rbT) # robutness vector
-            #print('PV: ', pv)
-            #print('pv[1:] ', pv[1:])
-            imin = np.argmin(pv[1:]) +1 # index of the worst point
-            #print(imin)
-             
-            # Generate the test vector
-            bCandPoint = cp.deepcopy(bCand)
-            # Generate a potentially better point
-            pointC = np.random.rand(1,2) - 0.5
-            bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
-            pointSV = self.RhoV(bCandPoint, mMT, rbT)
+            for i in range(1,pop_size):
+                nCand = self.x_rw(xinit, yinit, step, length)
+                nScore = self.robustness(nCand, mMT, rbT)
+                if nScore > bScore:
+                    bCand = nCand
+                    bScore = nScore
 
-            while pv[imin] > pointSV[imin] and maxiter > n:
-                bCandPoint = cp.deepcopy(bCand) # Reset the copy
-                pointC = 0.001*np.random.rand(1,2) - 0.0005
+            converge = 0 
+            n = 0
+            while converge < 50:
+                # Find the worst point
+                #print('Getting worst point')
+                pv = self.RhoV(bCand, mMT, rbT) # robutness vector
+                imin = np.argmin(pv[1:]) +1 # index of the worst point
+                     
+                # Generate the test vector
+                bCandPoint = cp.deepcopy(bCand)
+                # Generate a potentially better point
+                pointC = 0.1*(np.random.rand(1,2) - 0.5)
                 bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
                 pointSV = self.RhoV(bCandPoint, mMT, rbT)
-                print('n: ', n, ' Current: ', pv[imin], 'Proposed: ', pointSV[imin])
-                n = n + 1
 
-            #print('PV', pv)
-            #if self.pmin(pv) < self.pmin(pointSV):
-            bCand = cp.deepcopy(bCandPoint)
-            #print('n: ', n, ' robustness: ', self.pmin(bCand))
+                while pv[imin] > pointSV[imin] and converge < 50:
+                    bCandPoint  = cp.deepcopy(bCand) # Reset the copy, may need deep cp
+                    pointC = 0.1*(np.random.rand(1,2) - 0.5)
+                    bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
+                    pointSV = self.RhoV(bCandPoint, mMT, rbT)
+                    print('n: ', n, ' Current: ', pv[imin], 'Proposed: ', pointSV[imin])
+                    converge += 1
+                    n += 1
+                if converge < 50:
+                    converge = 0
+                else:
+                    print('Stalled')
+                    break
+                bCand = cp.deepcopy(bCandPoint)
+            stall += 1
+            if runningBestRho < self.robustness(bCand, mMT, rbT):
+                runningBestRho = self.robustness(bCand, mMT, rbT)
+                runningBest = cp.deepcopy(bCand)
+                
 
-        return bCand
+        return runningBest 
 
     def TrajOptSSDE(self, xinit, yinit, step, length, mMT, rbT):
         # Black box differential evolution function
@@ -656,7 +664,7 @@ class STLpredicate:
         agentcpScoreV = self.RhoV(agentcp, mMT, rbT)
         while agentScoreV[imin] >= agentcpScoreV[imin] and j < n-1:
             agentcp = cp.deepcopy(agent) # Reset the copy
-            pointC = 0.001*(np.random.rand(1,2) - 0.5)
+            pointC = 0.1*(np.random.rand(1,2) - 0.5)
             agentcp[:, imin] = agentcp[:, imin] + pointC
             agentcpScoreV = self.RhoV(agentcp, mMT, rbT)
             #print('j: ', j, ' Current: ', agentScoreV[imin], 'Proposed: ', agentcpScoreV[imin])
@@ -720,7 +728,7 @@ class STLpredicate:
             for i in range(pop_size//3, pop_size-1):
                 # Train Surivors
                 k = pIndices[i]
-                pop[k] = self.WPFT(pop[k], popscore[k], 200, mMT, rbT)
+                pop[k] = self.WPFT(pop[k], popscore[k], 50, mMT, rbT)
 
             j = j + 1
         pIndices = np.argsort(pScoreV)
@@ -780,6 +788,8 @@ if __name__ == '__main__':
     # Now time to run optimization
     sln1 = p.geneticEvo(0,0,step,length, mMT, rbT)
     #sln = p.TrajOptSSmin(0,0,step,length, mMT, rbT)
+    #sln1 = p.WPF(0, 0, step, length, mMT, rbT)
+    #sln1 = p.x_rw(0,0,step, length)
     print('Beginning Vanilla Optimization')
     sln = p.VanillaMin(0,0,sln1)
 
