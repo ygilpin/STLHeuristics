@@ -5,6 +5,7 @@ from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
 import copy as cp
 import math 
+import time
 
 class STLpredicate:
     def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0, minMaxType='n'):
@@ -111,11 +112,11 @@ class STLpredicate:
         if self.t1 <= t and t <= self.t2:
             if self.ae == 'a':
                 rhoVal = self.b - self.A @ x[:,t]
-            else:
+            elif self.ae == 'e':
                 if rbT == 'pw':
                     # Check if there is satisfaction at any point
                     sat = False
-                    for k in range(0, x.shape[1]):
+                    for k in range(self.t1, self.t2+1):
                         if (self.b - self.A @ x[:,k]) > 0:
                             sat = True
                             break
@@ -128,12 +129,14 @@ class STLpredicate:
                 elif rbT == 'n':
                     #print('Traditional robustness')
                     pi = []
-                    for k in range(0, x.shape[1]):
+                    for k in range(self.t1, self.t2 +1):
                         pi.append((self.b - self.A @ x[:,k]))
                     rhoVal = self.pmax(pi)
                 else: 
                     print('Error invalid robustness type: ' + rbT)
                     return rhoVal
+            else:
+                print('Error Computing Robustness')
         if 'mMT' == 'ag':
             rhoVal = rhoVal / self.R
         return rhoVal
@@ -199,11 +202,11 @@ class STLpredicate:
         # Top line
         p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0, 0]), y2)
         # Bottom line
-        p2 = STLpredicate(t1,t2,ae,np.array([0, -1, 0, 0]), -y1)
+        p2 = STLpredicate(t1,t2, ae, np.array([0, -1, 0, 0]), -y1)
         # Left line
-        p3 = STLpredicate(t1,t2,ae,np.array([-1, 0, 0, 0]), -x1)
+        p3 = STLpredicate(t1,t2, ae, np.array([-1, 0, 0, 0]), -x1)
         # Right line
-        p4 = STLpredicate(t1,t2,ae,np.array([1, 0, 0, 0]), x2)
+        p4 = STLpredicate(t1,t2, ae, np.array([1, 0, 0, 0]), x2)
         return p1 * p2 * p3 * p4
 
     def cost(self, xflt, mMT, rbT):
@@ -746,17 +749,17 @@ class STLpredicate:
             print("Directory " , path ,  " already exists")   
         fid = open(path + 'output', 'a')
         fid.write(str(datetime.datetime.now().time()) + '\n')
-        fid.write('Final Robustness: ' + mMT + ' ' + str(p.robustness(sln, mMT, rbT))+ '\n')
-        fid.write('Final Robustness: ' + 'el' + ' ' + str(p.robustness(sln, 'el', rbT))+ '\n')
-        fid.write('Final Robustness: ' + 'n' + ' ' + str(p.robustness(sln, 'n', rbT))+ '\n')
+        fid.write('Final Robustness: ' + mMT + ' ' + str(self.robustness(sln, mMT, rbT))+ '\n')
+        fid.write('Final Robustness: ' + 'el' + ' ' + str(self.robustness(sln, 'el', rbT))+ '\n')
+        fid.write('Final Robustness: ' + 'n' + ' ' + str(self.robustness(sln, 'n', rbT))+ '\n')
         fid.write('Solution')
-        fid.write(str(p.plant(sln)) + '\n')
+        fid.write(str(self.plant(sln)) + '\n')
         fid.write('Robustness of predicates 1 (obstacle), 2 (eventually), 3 (speed)\n')
-        fid.write(str(r1.RhoV(sln, mMT, rbT)) + '\n')
+        fid.write(str(rob1.RhoV(sln, mMT, rbT)) + '\n')
         fid.write(str(r2.RhoV(sln, mMT, rbT))+ '\n')
         fid.write(str(r3.RhoV(sln, mMT, rbT))+ '\n')
         fid.write('Combined Robustness Vector\n')
-        fid.write(str(p.RhoV(sln, mMT, rbT)) + '\n\n')
+        fid.write(str(self.RhoV(sln, mMT, rbT)) + '\n\n')
         fid.close()
         timestamp = str(datetime.datetime.now().time()).replace(':', '_')
         self.plotsln3D(sln, mMT, rbT, path + 'outputGraphs' + timestamp)
@@ -774,46 +777,110 @@ if __name__ == '__main__':
     mMT = 'vk'
     print("mMT: " + mMT)
 
+    test = 'p'
+    op = 'dbg'
+
     
 
-   # Some predicates based on these points
-    r1 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1.25, 0.5, 1)
-    r2 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
+    # Some predicates based on these points
+    # Generic Obstacles
+    rob1 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 0.5, 1)
+    rob2 = ~STLpredicate.rect(t1,t2, 'a', 1.25, 2, 0.5, 1)
+    rob3 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 1.25, 2)
+
+    # Generic Goal
+    rg1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
+
+    # P-test Predicates
+    pobs1 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 0.5, 1)
+    pobs2 = ~STLpredicate.rect(t1,t2, 'a', -0.25, 0.25, 0.5, 1)
+    pobs3 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, -1, -0.5)
+
+    pgas1 = STLpredicate.rect(t1, 7, 'e', -0.25, 0.25, 1.25, 1.75)
+    pgas2 = STLpredicate.rect(t1, 7, 'e', -1.5, -1, -0.25, 0.25)
+    pgas3 = STLpredicate.rect(t1, 7, 'e', -0.25, 0.25, -1.5, -1.75)
+
+    pgoal1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
+
+    p = pobs1*pobs2*pobs3*pgoal1*(pgas1 + pgas2 + pgas3)
+
+    x1 = -0.25
+    x2 = 0.25
+    y1 = 1.25
+    y2 = 1.75
+    ae = 'a'
+    p1 = STLpredicate(t1, 7, ae, np.array([0, 1, 0, 0]), y2)
+    # Bottom line
+    p2 = STLpredicate(t1,7, ae, np.array([0, -1, 0, 0]), -y1)
+    # Left line
+    p3 = STLpredicate(t1,7, ae, np.array([-1, 0, 0, 0]), -x1)
+    # Right line
+    p4 = STLpredicate(t1,7, ae, np.array([1, 0, 0, 0]), x2)
+    ptest = p1*p2*p3*p4
+
+    # N-test Predicates
+    n = rob1*rob2*rob3*rg1
+
+    # Dynamics
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1,0]), 0.22)
     r4 = STLpredicate(t1,t2, 'a', np.array([0,0,0,1]), 2.84)
     r5 = STLpredicate(t1,t2, 'a', np.array([0,0,-1,0]), 0.1)
     r6 = STLpredicate(t1,t2, 'a', np.array([0,0,0,-1]), 2.84)
-    p = r1*r6*r3*r4*r5*r2
+    d = r3*r4*r5*r6
+
+    if test == 'p':
+        q = p*d
+    else:
+        q = n*d
 
     # Now time to run optimization
-    sln1 = p.geneticEvo(0,0,step,length, mMT, rbT)
-    #sln = p.TrajOptSSmin(0,0,step,length, mMT, rbT)
-    #sln1 = p.WPF(0, 0, step, length, mMT, rbT)
-    #sln1 = p.x_rw(0,0,step, length)
-    print('Beginning Vanilla Optimization')
-    sln = p.VanillaMin(0,0,sln1)
+    if op == 'op':
+        start = time.time()
+        sln1 = q.geneticEvo(0,0,step,length, mMT, rbT)
+        #sln = p.TrajOptSSmin(0,0,step,length, mMT, rbT)
+        #sln1 = p.WPF(0, 0, step, length, mMT, rbT)
+        #sln1 = p.x_rw(0,0,step, length)
+        print('Beginning Vanilla Optimization')
+        sln = q.VanillaMin(0,0,sln1)
+        stop = time.time()
 
-    # Write Solution to file
-    path = './sln.txt'
-    fid = open(path, 'w')
-    sln.tofile(fid)
-    fid.close()
+        # Write Solution to file
+        path = './sln.txt'
+        fid = open(path, 'w')
+        sln.tofile(fid)
+        fid.close()
+
+    elif op == 'dbg':
+        start = 0
+        stop = 0
+        sln = np.fromfile('./sln.txt')
+        sln = sln.reshape((2,-1))
     
     # Print Results on Screen
-    print('Final Robustness wk: ', p.robustness(sln, 'wk', rbT))
-    print('Final Robustness  n: ', p.robustness(sln, 'n', rbT))
-    print("Solution")
-    print(p.plant(sln))
-    print("Robustness of predicates 1 (obstacle), 2 (eventually), 3 (speed)")
-    print(r1.RhoV(sln, 'n', rbT))
-    print(r2.RhoV(sln, 'n', rbT))
-    print(r3.RhoV(sln, 'n', rbT))
-    print(r4.RhoV(sln, 'n', rbT))
-    print(r5.RhoV(sln, 'n', rbT))
-    print(r6.RhoV(sln, 'n', rbT))
-    print('Combined Robustness Vector Normal')
-    print(p.RhoV(sln, 'n', rbT))
-    print('Combined Robustness Vector Exp Log')
-    print(p.RhoV(sln, 'el', rbT))
-    p.plotsln3D(sln, mMT=mMT, rbT=rbT)
-    p.saveRes(sln, mMT=mMT, rbT=rbT)
+    if test == 'p':
+        #rbT = 'n'
+        print('Optimization Time: ', stop - start)
+        print('Final Robustness wk: ', q.robustness(sln, 'wk', rbT))
+        print('Final Robustness  pw-n: ', q.robustness(sln, 'n', 'pw'))
+        print('Final Robustness  n-n: ', q.robustness(sln, 'n', 'n'))
+        print("Solution")
+        print(q.plant(sln))
+        #print("Robustness of obstacles")
+        #print(min(pobs1.RhoV(sln, 'n', rbT)))
+        #print(min(pobs2.RhoV(sln, 'n', rbT)))
+        #print(min(pobs3.RhoV(sln, 'n', rbT)))
+        print('Robustness of gas')
+        print((pgas1.RhoV(sln, 'n', rbT)))
+        #print((pgas2.RhoV(sln, 'n', rbT)))
+        #print((pgas3.RhoV(sln, 'n', rbT)))
+        print(((ptest).RhoV(sln, 'n', rbT)))
+        print(((p1).RhoV(sln, 'n', rbT)))
+        print(((p2).RhoV(sln, 'n', rbT)))
+        print(((p3).RhoV(sln, 'n', rbT)))
+        print(((p4).RhoV(sln, 'n', rbT)))
+        print('Robustness of Eventually')
+        print((pgoal1.RhoV(sln, 'n', rbT)))
+        print('Combined Robustness Vector Normal')
+        print(q.RhoV(sln, 'n', rbT))
+        #q.plotsln3D(sln, mMT=mMT, rbT=rbT)
+        #q.saveRes(sln, mMT=mMT, rbT=rbT)
