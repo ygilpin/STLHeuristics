@@ -8,7 +8,7 @@ import math
 import time
 
 class STLpredicate:
-    def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0, minMaxType='n'):
+    def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0):
         self.t1 = t1 # When predicate is active
         self.t2 = t2
         self.A  = A # Equation of a line
@@ -19,7 +19,8 @@ class STLpredicate:
         self.right = right
         self.k = 25 
         self.alpha = 25 
-        self.R = 10 # Normalization factor
+        self.R = 2.5 # Normalization factor
+        self.Rp = False # A & b normalized ?
         self.T = 1 # Sample Rate
 
     def pmin(self, v, mMT = 'n'):
@@ -28,21 +29,21 @@ class STLpredicate:
             return min(v)
         
         if mMT == 'ag':
-            pos = True
             N = len(v)
+            pos = True
             for element in v: 
                 if element <= 0:
                     pos = False
                     break
-            if ~pos:
+            if pos:
+                v = v + np.ones((1,N))
+                return math.pow(np.prod(v), 1/N) -1
+            else:
                 rsum = 0
                 for element in v:
-                    if element < 0:
+                    if element <= 0:
                         rsum += element
                 return rsum/N
-            else:
-                v = v + np.ones((1,N))
-                return math.pow(abs(np.prod(v)), 1/N) -1
 
         if mMT == 'el' or mMT == 'vk':
             #print(v)
@@ -88,27 +89,34 @@ class STLpredicate:
             return num/denom
         
         if mMT == 'ag':
-            pos = True
+            N = len(v)
+            pos = False 
             for element in v: 
                 if element > 0:
-                    pos = False
+                    pos = True 
                     break
-            if ~pos:
+            if pos:
                 rsum = 0
                 for element in v:
                     if element > 0:
                         rsum += element
                 return rsum/N
             else:
-                N = len(v)
                 v = np.ones((1,N)) - v
-                return -math.pow(abs(np.prod(v)), 1/N) +1
+                return -math.pow(np.prod(v), 1/N) +1
 
             
     def myRho(self, x, t, mMT, rbT):
         # Calculate the robustness of myself
         # Should only be called when I have no left or right branch
         rhoVal = 'Nan'
+        if 'mMT' == 'ag':
+            x = x/self.R
+            if ~self.Rp:
+                self.A = self.A /self.R
+                self.b = self.b/self.R
+                self.Rp = True
+
         if self.t1 <= t and t <= self.t2:
             if self.ae == 'a':
                 rhoVal = self.b - self.A @ x[:,t]
@@ -137,8 +145,6 @@ class STLpredicate:
                     return rhoVal
             else:
                 print('Error Computing Robustness')
-        if 'mMT' == 'ag':
-            rhoVal = rhoVal / self.R
         return rhoVal
 
     def Rho(self, x, t, mMT, rbT):
@@ -161,10 +167,62 @@ class STLpredicate:
         if self.left:
             if self.cdn == 'n':
                 return -self.left.Rho(x, t, mMT, rbT)
+            elif self.cdn == 'e':
+                if t <= self.t2 and t >= self.t1:
+                    v = []
+                    if rbT == 'pw':
+                        sat = False
+                        for i in range(self.t1,self.t2+1):
+                            rho = self.left.Rho(x,i,mMT, rbT)
+                            #print(rho)
+                            if rho > 0:
+                                sat = True
+                                break
+                        deltax = abs(self.left.Rho(x,t,mMT, rbT))
+                        deltat = abs(1 + self.t2 -t)
+                        if sat:
+                            rhoVal = (deltat)/((deltax)+0.4)
+                        else:
+                            rhoVal = -(deltax)/((deltat)+0.4)
+                        return rhoVal
+
+                    elif rbT == 'n':
+                        for i in range(self.t1,self.t2+1):
+                            v.append(self.left.Rho(x,i,mMT, rbT))
+                        return self.pmax(v)
+                else:
+                    return 'Nan'
             return self.left.Rho(x, t, mMT, rbT)
         if self.right:
             if self.cdn == 'n':
                 return -self.right.Rho(x, t, mMT, rbT)
+            elif self.cdn == 'e':
+                if t <= self.t2 and t > self.t1:
+                    v = []
+                    if rbT == 'pw':
+                        sat = False
+                        for i in range(self.t1,self.t2+1):
+                            rho = self.left.Rho(x,i,mMT, rbT)
+                            #print(rho)
+                            if rho > 0:
+                                sat = True
+                                break
+                        deltax = abs(self.left.Rho(x,t,mMT, rbT))
+                        deltat = abs(1 + self.t2 -t)
+                        if sat:
+                            rhoVal = (deltat)/((deltax)+0.4)
+                        else:
+                            rhoVal = -(deltax)/((deltat)+0.4)
+                        return rhoVal
+
+                    elif rbT == 'n':
+                        for i in range(self.t1,self.t2+1):
+                            print('Printing self.right')
+                            print(self.right)
+                            v.append(self.right.Rho(x,i,mMT, rbT))
+                        return self.pmax(v)
+                else:
+                    return 'Nan'
             return self.right.Rho(x, t, mMT, rbT)
         return self.myRho(x, t, mMT, rbT)
 
@@ -200,14 +258,21 @@ class STLpredicate:
     def rect(t1,t2,ae,x1,x2,y1,y2):
         # First the equations for the lines are needed
         # Top line
-        p1 = STLpredicate(t1, t2, ae, np.array([0, 1, 0, 0]), y2)
+        p1 = STLpredicate(t1, t2, 'a', np.array([0, 1, 0, 0]), y2)
         # Bottom line
-        p2 = STLpredicate(t1,t2, ae, np.array([0, -1, 0, 0]), -y1)
+        p2 = STLpredicate(t1,t2, 'a', np.array([0, -1, 0, 0]), -y1)
         # Left line
-        p3 = STLpredicate(t1,t2, ae, np.array([-1, 0, 0, 0]), -x1)
+        p3 = STLpredicate(t1,t2, 'a', np.array([-1, 0, 0, 0]), -x1)
         # Right line
-        p4 = STLpredicate(t1,t2, ae, np.array([1, 0, 0, 0]), x2)
-        return p1 * p2 * p3 * p4
+        p4 = STLpredicate(t1,t2, 'a', np.array([1, 0, 0, 0]), x2)
+
+
+        cmplt = p1 * p2 * p3 * p4
+
+        if ae == 'e':
+            return STLpredicate(t1, t2 ,'e', cdn='e', left=cmplt) 
+        else:
+            return cmplt
 
     def cost(self, xflt, mMT, rbT):
         x = np.reshape(xflt, (2, -1))
@@ -590,8 +655,8 @@ class STLpredicate:
 
     def VanillaMin(self, xinit, yinit, x0, mMT='vk', rbT='n', mthd='SLSQP'):
         #bnds = self.bounds(xinit, yinit, length)
-        self.k = 25 
-        self.alpha = 25 
+        self.k = 10 
+        self.alpha = 10 
         guessflt = np.reshape(x0[:,1:], (1, -1))
         options = {'maxiter': 1000}
         opt = sciOpt.minimize(self.cost, guessflt, args=(mMT,rbT),method=mthd, options=options)
@@ -764,61 +829,60 @@ class STLpredicate:
         timestamp = str(datetime.datetime.now().time()).replace(':', '_')
         self.plotsln3D(sln, mMT, rbT, path + 'outputGraphs' + timestamp)
 
+    def rectPtch(x1, x2, y1, y2, color='red'): 
+        return plt.Rectangle((x1,y1), x2-x1, y2-y1, color=color, alpha=0.5)
+
 if __name__ == '__main__':
     import scipy.optimize as sciOpt
     import datetime
     import os
     # Available Times
     t1 = 0
-    t2 = 14 
-    length = 15 
+    t2 = 16 
+    length = 17 
     step = 0.22
-    rbT = 'pw'
-    mMT = 'vk'
-    print("mMT: " + mMT)
 
-    test = 'p'
-    op = 'dbg'
-
-    
+    test = 'n' # 'n' for number of time steps test. 'p' for disjuction predicate test
+    op = 'op' # 'op' for optimize, 'dbg' for debug, 'dbghc' for debug hardcore
+    optp = 'agm' # vk, agm, lse, gen
 
     # Some predicates based on these points
-    # Generic Obstacles
-    rob1 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 0.5, 1)
-    rob2 = ~STLpredicate.rect(t1,t2, 'a', 1.25, 2, 0.5, 1)
-    rob3 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 1.25, 2)
-
-    # Generic Goal
-    rg1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
 
     # P-test Predicates
     pobs1 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 0.5, 1)
     pobs2 = ~STLpredicate.rect(t1,t2, 'a', -0.25, 0.25, 0.5, 1)
     pobs3 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, -1, -0.5)
 
-    pgas1 = STLpredicate.rect(t1, 7, 'e', -0.25, 0.25, 1.25, 1.75)
-    pgas2 = STLpredicate.rect(t1, 7, 'e', -1.5, -1, -0.25, 0.25)
-    pgas3 = STLpredicate.rect(t1, 7, 'e', -0.25, 0.25, -1.5, -1.75)
+    obs1 = STLpredicate.rectPtch(0.5, 1, 0.5, 1)
+    obs2 = STLpredicate.rectPtch(-0.25, 0.25, 0.5, 1)
+    obs3 = STLpredicate.rectPtch(0.5, 1, -1, -0.5)
+
+    pgas1 = STLpredicate.rect(t1, 10, 'e', 1.2, 1.5, -0.5, 0.25)
+    pgas2 = STLpredicate.rect(t1, 10, 'e', 0, 0.3, 1.25, 1.5)
+    pgas3 = STLpredicate.rect(t1, 10, 'e', -0.25, 0.25, -1.5, -1.75)
+
+    gas1 = STLpredicate.rectPtch(1.2, 1.5, -0.5, 0.25, 'blue') 
+    gas2 = STLpredicate.rectPtch(0, 0.3, 1.25, 1.5, 'blue') 
+    gas3 = STLpredicate.rectPtch(-0.25, 0.25, -1.5, -1.75, 'blue') 
 
     pgoal1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
 
+    goal1 = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
     p = pobs1*pobs2*pobs3*pgoal1*(pgas1 + pgas2 + pgas3)
 
-    x1 = -0.25
-    x2 = 0.25
-    y1 = 1.25
-    y2 = 1.75
-    ae = 'a'
-    p1 = STLpredicate(t1, 7, ae, np.array([0, 1, 0, 0]), y2)
-    # Bottom line
-    p2 = STLpredicate(t1,7, ae, np.array([0, -1, 0, 0]), -y1)
-    # Left line
-    p3 = STLpredicate(t1,7, ae, np.array([-1, 0, 0, 0]), -x1)
-    # Right line
-    p4 = STLpredicate(t1,7, ae, np.array([1, 0, 0, 0]), x2)
-    ptest = p1*p2*p3*p4
-
     # N-test Predicates
+    rob1 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 0.5, 1)
+    rob2 = ~STLpredicate.rect(t1,t2, 'a', 1.25, 2, 0.5, 1)
+    rob3 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 1.25, 2)
+
+    obs1 = STLpredicate.rectPtch(0.5, 1, 0.5, 1)
+    obs2 = STLpredicate.rectPtch(1.25, 2, 0.5, 1)
+    obs3 = STLpredicate.rectPtch(0.5, 1, 1.25, 2)
+        
+    rg1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
+    goal1 = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
+
+    # Complete Scenario
     n = rob1*rob2*rob3*rg1
 
     # Dynamics
@@ -830,19 +894,53 @@ if __name__ == '__main__':
 
     if test == 'p':
         q = p*d
-    else:
+        print('Predicate Stress Test')
+    elif test == 'n':
         q = n*d
+        print('Time Step Stress Test')
 
     # Now time to run optimization
     if op == 'op':
-        start = time.time()
-        sln1 = q.geneticEvo(0,0,step,length, mMT, rbT)
-        #sln = p.TrajOptSSmin(0,0,step,length, mMT, rbT)
-        #sln1 = p.WPF(0, 0, step, length, mMT, rbT)
-        #sln1 = p.x_rw(0,0,step, length)
-        print('Beginning Vanilla Optimization')
-        sln = q.VanillaMin(0,0,sln1)
-        stop = time.time()
+        if optp == 'gen':
+            rbT = 'pw'
+            mMT = 'vk'
+            print('Beginning Genetic Optimization. mMT: ', mMT, ' rbT: ', rbT)
+            start = time.time()
+            sln1 = q.geneticEvo(0,0,step,length, mMT, rbT)
+            print('Beginning Vanilla Optimization')
+            sln = q.VanillaMin(0,0,sln1)
+            stop = time.time()
+        
+        elif optp == 'vk':
+            rbT = 'n'
+            mMT = 'vk'
+            print('Beginning SLSQP Optimization. mMT: ', mMT, ' rbT: ', rbT)
+            start = time.time()
+            sln1 = q.x_rw(0,0,step,length)
+            sln = q.VanillaMin(0,0,sln1, mMT=mMT, rbT=rbT, mthd='SLSQP')
+            stop = time.time()
+
+        elif optp == 'agm':
+            rbT = 'n'
+            mMT = 'ag'
+            print('Beginning AGM-SLSQP Optimization. mMT: ', mMT, ' rbT: ', rbT)
+            start = time.time()
+            sln1 = q.x_rw(0,0,step,length)
+            sln = q.VanillaMin(0,0,sln1, mMT=mMT, rbT=rbT, mthd='SLSQP')
+            stop = time.time()
+            print(q.robustness(sln, 'n', 'ag'))
+
+        elif optp == 'lse':
+            rbT = 'n'
+            mMT = 'el'
+            print('Beginning LSE-SLSQP Optimization. mMT: ', mMT, ' rbT: ', rbT)
+            start = time.time()
+            sln1 = q.x_rw(0,0,step,length)
+            sln = q.VanillaMin(0,0,sln1, mMT=mMT, rbT=rbT, mthd='SLSQP')
+            stop = time.time()
+
+        else:
+            print('Invalid Optimization type: ', optp)
 
         # Write Solution to file
         path = './sln.txt'
@@ -856,31 +954,91 @@ if __name__ == '__main__':
         sln = np.fromfile('./sln.txt')
         sln = sln.reshape((2,-1))
     
+    elif op =='dbghc':
+        start = 0
+        stop = 0
+        spd = 0.22*np.ones((1,length))
+        omega = 0.01*np.ones((1,length))
+        sln = np.vstack((spd,omega))
+        print(sln)
+    
     # Print Results on Screen
     if test == 'p':
         #rbT = 'n'
         print('Optimization Time: ', stop - start)
-        print('Final Robustness wk: ', q.robustness(sln, 'wk', rbT))
-        print('Final Robustness  pw-n: ', q.robustness(sln, 'n', 'pw'))
         print('Final Robustness  n-n: ', q.robustness(sln, 'n', 'n'))
         print("Solution")
-        print(q.plant(sln))
-        #print("Robustness of obstacles")
-        #print(min(pobs1.RhoV(sln, 'n', rbT)))
-        #print(min(pobs2.RhoV(sln, 'n', rbT)))
-        #print(min(pobs3.RhoV(sln, 'n', rbT)))
+        slnCmplt = q.plant(sln)
+        print(slnCmplt)
+        print("Robustness of obstacles")
+        print((pobs1.RhoV(sln, 'n', rbT)))
+        print((pobs2.RhoV(sln, 'n', rbT)))
+        print((pobs3.RhoV(sln, 'n', rbT)))
         print('Robustness of gas')
         print((pgas1.RhoV(sln, 'n', rbT)))
-        #print((pgas2.RhoV(sln, 'n', rbT)))
-        #print((pgas3.RhoV(sln, 'n', rbT)))
-        print(((ptest).RhoV(sln, 'n', rbT)))
-        print(((p1).RhoV(sln, 'n', rbT)))
-        print(((p2).RhoV(sln, 'n', rbT)))
-        print(((p3).RhoV(sln, 'n', rbT)))
-        print(((p4).RhoV(sln, 'n', rbT)))
+        print((pgas2.RhoV(sln, 'n', rbT)))
+        print((pgas3.RhoV(sln, 'n', rbT)))
         print('Robustness of Eventually')
         print((pgoal1.RhoV(sln, 'n', rbT)))
         print('Combined Robustness Vector Normal')
         print(q.RhoV(sln, 'n', rbT))
         #q.plotsln3D(sln, mMT=mMT, rbT=rbT)
         #q.saveRes(sln, mMT=mMT, rbT=rbT)
+        
+        fig = plt.figure()
+        ax = fig.add_axes([0,0,1,1])
+        ax.set_xlim((-1,2))
+        ax.set_ylim((-2,2))
+
+        ax.add_patch(obs1)
+        ax.add_patch(obs2)
+        ax.add_patch(obs3)
+
+        ax.add_patch(gas1)
+        ax.add_patch(gas2)
+        ax.add_patch(gas3)
+
+        ax.add_patch(goal1)
+        ax.plot(slnCmplt[0,:],slnCmplt[1,:], linestyle='-', marker="o")
+        ax.axes.get_xaxis().set_visible(True)
+        ax.axes.get_yaxis().set_visible(True)
+        plt.title('P-Test')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.show()
+
+    elif test == 'n':
+        print('Optimization Time: ', stop - start)
+        print('Final Robustness  n-n: ', q.robustness(sln, 'n', 'n'))
+        print("Solution")
+        slnCmplt = q.plant(sln)
+        print(slnCmplt)
+
+        print("Robustness of obstacles")
+        print((pobs1.RhoV(sln, 'n', rbT)))
+        print((pobs2.RhoV(sln, 'n', rbT)))
+        print((pobs3.RhoV(sln, 'n', rbT)))
+
+        print('Robustness of Eventually')
+        print((pgoal1.RhoV(sln, 'n', rbT)))
+
+        print('Combined Robustness Vector Normal')
+        print(q.RhoV(sln, 'n', rbT))
+
+        fig = plt.figure()
+        ax = fig.add_axes([0,0,1,1])
+        ax.set_xlim((-0.5,2))
+        ax.set_ylim((-0.1,2.5))
+
+        ax.add_patch(obs1)
+        ax.add_patch(obs2)
+        ax.add_patch(obs3)
+
+        ax.add_patch(goal1)
+        ax.plot(slnCmplt[0,:],slnCmplt[1,:], linestyle='-', marker="o")
+        ax.axes.get_xaxis().set_visible(True)
+        ax.axes.get_yaxis().set_visible(True)
+        plt.title('N-Test')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.show()
