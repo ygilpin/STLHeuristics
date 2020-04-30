@@ -838,13 +838,13 @@ if __name__ == '__main__':
     import os
     # Available Times
     t1 = 0
-    t2 = 16 
-    length = 17 
+    t2 = 19 
+    length = 20 
     step = 0.22
 
-    test = 'n' # 'n' for number of time steps test. 'p' for disjuction predicate test
+    test = 'n' #'simp' for simple, 'n' for number of time steps test. 'p' for disjuction predicate test
     op = 'op' # 'op' for optimize, 'dbg' for debug, 'dbghc' for debug hardcore
-    optp = 'agm' # vk, agm, lse, gen
+    optp = 'gen' # vk, agm, lse, gen
 
     # Some predicates based on these points
 
@@ -853,21 +853,21 @@ if __name__ == '__main__':
     pobs2 = ~STLpredicate.rect(t1,t2, 'a', -0.25, 0.25, 0.5, 1)
     pobs3 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, -1, -0.5)
 
-    obs1 = STLpredicate.rectPtch(0.5, 1, 0.5, 1)
-    obs2 = STLpredicate.rectPtch(-0.25, 0.25, 0.5, 1)
-    obs3 = STLpredicate.rectPtch(0.5, 1, -1, -0.5)
+    obs1p = STLpredicate.rectPtch(0.5, 1, 0.5, 1)
+    obs2p = STLpredicate.rectPtch(-0.25, 0.25, 0.5, 1)
+    obs3p = STLpredicate.rectPtch(0.5, 1, -1, -0.5)
 
     pgas1 = STLpredicate.rect(t1, 10, 'e', 1.2, 1.5, -0.5, 0.25)
     pgas2 = STLpredicate.rect(t1, 10, 'e', 0, 0.3, 1.25, 1.5)
     pgas3 = STLpredicate.rect(t1, 10, 'e', -0.25, 0.25, -1.5, -1.75)
 
-    gas1 = STLpredicate.rectPtch(1.2, 1.5, -0.5, 0.25, 'blue') 
-    gas2 = STLpredicate.rectPtch(0, 0.3, 1.25, 1.5, 'blue') 
-    gas3 = STLpredicate.rectPtch(-0.25, 0.25, -1.5, -1.75, 'blue') 
+    gas1p = STLpredicate.rectPtch(1.2, 1.5, -0.5, 0.25, 'blue') 
+    gas2p = STLpredicate.rectPtch(0, 0.3, 1.25, 1.5, 'blue') 
+    gas3p = STLpredicate.rectPtch(-0.25, 0.25, -1.5, -1.75, 'blue') 
 
     pgoal1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
 
-    goal1 = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
+    goal1p = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
     p = pobs1*pobs2*pobs3*pgoal1*(pgas1 + pgas2 + pgas3)
 
     # N-test Predicates
@@ -875,15 +875,24 @@ if __name__ == '__main__':
     rob2 = ~STLpredicate.rect(t1,t2, 'a', 1.25, 2, 0.5, 1)
     rob3 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 1.25, 2)
 
-    obs1 = STLpredicate.rectPtch(0.5, 1, 0.5, 1)
-    obs2 = STLpredicate.rectPtch(1.25, 2, 0.5, 1)
-    obs3 = STLpredicate.rectPtch(0.5, 1, 1.25, 2)
+    obs1n = STLpredicate.rectPtch(0.5, 1, 0.5, 1)
+    obs2n = STLpredicate.rectPtch(1.25, 2, 0.5, 1)
+    obs3n = STLpredicate.rectPtch(0.5, 1, 1.25, 2)
         
     rg1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
-    goal1 = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
+    goal1n = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
 
     # Complete Scenario
     n = rob1*rob2*rob3*rg1
+
+    # Simple Test Predicates
+    spobs = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 0.5, 1)
+    spobsp = STLpredicate.rectPtch(0.5, 1, 0.5, 1)
+
+    spgoal = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
+    spgoalp = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
+    
+    sp = spobs*spgoal
 
     # Dynamics
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1,0]), 0.22)
@@ -898,6 +907,11 @@ if __name__ == '__main__':
     elif test == 'n':
         q = n*d
         print('Time Step Stress Test')
+    elif test == 'simp':
+        q = sp*d
+        print('Simple Test')
+    else:
+        print('Invalid Test')
 
     # Now time to run optimization
     if op == 'op':
@@ -964,7 +978,7 @@ if __name__ == '__main__':
     
     # Print Results on Screen
     if test == 'p':
-        #rbT = 'n'
+        rbT = 'pw'
         print('Optimization Time: ', stop - start)
         print('Final Robustness  n-n: ', q.robustness(sln, 'n', 'n'))
         print("Solution")
@@ -973,7 +987,7 @@ if __name__ == '__main__':
         print("Robustness of obstacles")
         print((pobs1.RhoV(sln, 'n', rbT)))
         print((pobs2.RhoV(sln, 'n', rbT)))
-        print((pobs3.RhoV(sln, 'n', rbT)))
+        prtnt((pobs3.RhoV(sln, 'n', rbT)))
         print('Robustness of gas')
         print((pgas1.RhoV(sln, 'n', rbT)))
         print((pgas2.RhoV(sln, 'n', rbT)))
@@ -985,29 +999,27 @@ if __name__ == '__main__':
         #q.plotsln3D(sln, mMT=mMT, rbT=rbT)
         #q.saveRes(sln, mMT=mMT, rbT=rbT)
         
-        fig = plt.figure()
-        ax = fig.add_axes([0,0,1,1])
+        fix, ax = plt.subplots(1)
         ax.set_xlim((-1,2))
         ax.set_ylim((-2,2))
 
-        ax.add_patch(obs1)
-        ax.add_patch(obs2)
-        ax.add_patch(obs3)
+        ax.add_patch(obs1p)
+        ax.add_patch(obs2p)
+        ax.add_patch(obs3p)
 
-        ax.add_patch(gas1)
-        ax.add_patch(gas2)
-        ax.add_patch(gas3)
+        ax.add_patch(gas1p)
+        ax.add_patch(gas2p)
+        ax.add_patch(gas3p)
 
-        ax.add_patch(goal1)
+        ax.add_patch(goal1p)
         ax.plot(slnCmplt[0,:],slnCmplt[1,:], linestyle='-', marker="o")
-        ax.axes.get_xaxis().set_visible(True)
-        ax.axes.get_yaxis().set_visible(True)
-        plt.title('P-Test')
+        plt.title('Predicate Test')
         plt.xlabel('x')
         plt.ylabel('y')
         plt.show()
 
     elif test == 'n':
+        rbT = 'pw'
         print('Optimization Time: ', stop - start)
         print('Final Robustness  n-n: ', q.robustness(sln, 'n', 'n'))
         print("Solution")
@@ -1025,20 +1037,49 @@ if __name__ == '__main__':
         print('Combined Robustness Vector Normal')
         print(q.RhoV(sln, 'n', rbT))
 
-        fig = plt.figure()
-        ax = fig.add_axes([0,0,1,1])
+        fix, ax = plt.subplots(1)
         ax.set_xlim((-0.5,2))
         ax.set_ylim((-0.1,2.5))
 
-        ax.add_patch(obs1)
-        ax.add_patch(obs2)
-        ax.add_patch(obs3)
+        ax.add_patch(obs1n)
+        ax.add_patch(obs2n)
+        ax.add_patch(obs3n)
 
-        ax.add_patch(goal1)
+        ax.add_patch(goal1n)
         ax.plot(slnCmplt[0,:],slnCmplt[1,:], linestyle='-', marker="o")
-        ax.axes.get_xaxis().set_visible(True)
-        ax.axes.get_yaxis().set_visible(True)
-        plt.title('N-Test')
+        #ax.axes.get_xaxis().set_visible(True)
+        #ax.axes.get_yaxis().set_visible(True)
+        plt.title('Time Step Test, N=' + str(length))
         plt.xlabel('x')
         plt.ylabel('y')
         plt.show()
+
+    elif test == 'simp':
+        rbT= 'pw'
+        print('Optimization Time: ', stop - start)
+        print('Final Robustness  n-n: ', q.robustness(sln, 'n', 'n'))
+        print("Solution")
+        slnCmplt = q.plant(sln)
+        print(slnCmplt)
+
+        print("Robustness of obstacle")
+        print((spobs.RhoV(sln, 'n', rbT)))
+
+        print('Robustness of Eventually')
+        print((spgoal.RhoV(sln, 'n', rbT)))
+
+        fix, ax = plt.subplots(1)
+        ax.set_xlim((-0.5,2))
+        ax.set_ylim((-0.1,2.5))
+
+        ax.add_patch(spobsp)
+        ax.add_patch(spgoalp)
+
+        ax.plot(slnCmplt[0,:],slnCmplt[1,:], linestyle='-', marker="o")
+        #ax.axes.get_xaxis().set_visible(True)
+        #ax.axes.get_yaxis().set_visible(True)
+        plt.title('Simple-Test')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.show()
+
