@@ -11,54 +11,49 @@ class STLpredicate:
     def __init__(self, t1 = 0, t2 = 0, ae = 0, A = 0, b = 0, cdn = 0 , left = 0, right = 0):
         self.t1 = t1 # When predicate is active
         self.t2 = t2
-        self.A  = A # Equation of a line
-        self.b  = b # constant from ^
-        self.ae = ae # always or eventually
-        self.cdn = cdn # conjuction, disjunction or negation
-        self.left = left # other STL predicates for conjuction/disjunction
+        self.A  = A         # Equation of a line as in Ax < b
+        self.b  = b         # constant from ^
+        self.ae = ae        # always or eventually
+        self.cdn = cdn      # conjuction, disjunction or negation
+        self.left = left    # other STL predicates for conjuction/disjunction
         self.right = right
-        self.k = 25 
-        self.alpha = 25 
+        self.k = 25         # for LSE approximation
+        self.alpha = 25     # for exponential fraction approximation
         self.R = 2.5 # Normalization factor
         self.Rp = False # A & b normalized ?
         self.T = 1 # Sample Rate
 
+    # Minimum function (allows for a variety of smooth approximations)
     def pmin(self, v, mMT = 'n'):
         v = np.array(v)
         if mMT == 'n': 
             return min(v)
         
-        if mMT == 'ag':
-            N = len(v)
-            pos = True
-            for element in v: 
-                if element <= 0:
-                    pos = False
-                    break
-            if pos:
-                v = v + np.ones((1,N))
-                return math.pow(np.prod(v), 1/N) -1
-            else:
-                rsum = 0
-                for element in v:
-                    if element <= 0:
-                        rsum += element
-                return rsum/N
+        # Arithmetic Geometric mean attempt; does not work
+        #if mMT == 'ag':
+        #    N = len(v)
+        #    pos = True
+        #    for element in v: 
+        #        if element <= 0:
+        #            pos = False
+        #            break
+        #    if pos:
+        #        v = v + np.ones((1,N))
+        #        return math.pow(np.prod(v), 1/N) -1
+        #    else:
+        #        rsum = 0
+        #        for element in v:
+        #            if element <= 0:
+        #                rsum += element
+        #        return rsum/N
 
-        if mMT == 'el' or mMT == 'vk':
+        if mMT == 'el' or mMT == 'ef':
             #print(v)
             max_elem = max(v)
             vprime = -self.k*v + self.k*max_elem
             vprime = np.exp(vprime)
             return -math.log(vprime.sum())/self.k + max_elem
             
-            """sm = 0
-            for element in v:
-                sm += math.exp(-self.k*element)
-                if sm < 0:
-                    print(sm)
-            return -math.log(sm)/self.k"""
-
         if mMT == 'wk':
             num = 0
             denom = 0
@@ -68,6 +63,7 @@ class STLpredicate:
                 denom += expnt
             return num/denom
 
+    # Maximum function (allows for various approximations)
     def pmax(self, v, mMT = 'n'):
         v = np.array(v)
         if mMT == 'n': 
@@ -79,7 +75,7 @@ class STLpredicate:
             vprime = np.exp(vprime)
             return -math.log(vprime.sum())/self.k + max_elem
 
-        if mMT == 'wk' or mMT == 'vk':
+        if mMT == 'wk' or mMT == 'ef':
             num = 0
             denom = 0
             for element in v:
@@ -88,22 +84,23 @@ class STLpredicate:
                 denom += expnt
             return num/denom
         
-        if mMT == 'ag':
-            N = len(v)
-            pos = False 
-            for element in v: 
-                if element > 0:
-                    pos = True 
-                    break
-            if pos:
-                rsum = 0
-                for element in v:
-                    if element > 0:
-                        rsum += element
-                return rsum/N
-            else:
-                v = np.ones((1,N)) - v
-                return -math.pow(np.prod(v), 1/N) +1
+        # Once again AGM approximation attempt, but does not work
+        #if mMT == 'ag':
+        #    N = len(v)
+        #    pos = False 
+        #    for element in v: 
+        #        if element > 0:
+        #            pos = True 
+        #            break
+        #    if pos:
+        #        rsum = 0
+        #        for element in v:
+        #            if element > 0:
+        #                rsum += element
+        #        return rsum/N
+        #    else:
+        #        v = np.ones((1,N)) - v
+        #        return -math.pow(np.prod(v), 1/N) +1
 
             
     def myRho(self, x, t, mMT, rbT):
@@ -148,6 +145,7 @@ class STLpredicate:
         return rhoVal
 
     def Rho(self, x, t, mMT, rbT):
+        # Works down binary tree to compute robustness
         #print("Robustness function called")
         # Force the calcluation of left and right 
         leftRho = 'Nan'
@@ -227,6 +225,7 @@ class STLpredicate:
         return self.myRho(x, t, mMT, rbT)
 
     def RhoV(self, x, mMT, rbT):
+        # Compute the robustness vector
         traj = self.plant(x)
         p = []
         for t in range(0, x.shape[1]):
@@ -234,6 +233,7 @@ class STLpredicate:
         return p
 
     def robustness(self,x, mMT, rbT):
+        # Compute the robustness from the robustness vector
         tmp = self.pmin(self.RhoV(x, mMT, rbT))
         return tmp
 
@@ -243,19 +243,23 @@ class STLpredicate:
         return self.pmin(self.RhoV(x, mMT, rbT))
 
     def __invert__(self):
+        # allows negation of predicate 
         return STLpredicate(t1=self.t1, t2=self.t2, cdn='n', left=self)
 
     def __add__(self, other):
-        print("Disjunction between two predicates")
+        # Allows easy disjuction between two predicates
+        #print("Disjunction between two predicates")
         return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='d',
                 left=self, right=other)
 
     def __mul__(self, other):
+        # Allows easy disjuction between predicates
         #print("Conjunction between two predicates")
         return STLpredicate(t1=min(self.t1, other.t2), t2=max(self.t2,other.t2), cdn='c',
                 left=self, right=other)
 
     def rect(t1,t2,ae,x1,x2,y1,y2):
+        # writes the predicates for inside a rectangle
         # First the equations for the lines are needed
         # Top line
         p1 = STLpredicate(t1, t2, 'a', np.array([0, 1, 0, 0]), y2)
@@ -269,18 +273,21 @@ class STLpredicate:
 
         cmplt = p1 * p2 * p3 * p4
 
+        # This compensates for how eventually does not distribute over conjunction
         if ae == 'e':
             return STLpredicate(t1, t2 ,'e', cdn='e', left=cmplt) 
         else:
             return cmplt
 
     def cost(self, xflt, mMT, rbT):
+        # Cost funtion for optimization
         x = np.reshape(xflt, (2, -1))
         x = np.hstack(([[0],[0]],x))
         p = self.robustness(x, mMT, rbT)
         return - p
 
     def expsum(self,v):
+        # Computes the LSE approximation without the log
         esum = 0
         for element in v:
             esum += math.exp(-self.k*element)
@@ -308,6 +315,8 @@ class STLpredicate:
         return x
 
     def x_rw(self, v0, omega0, step, length):
+        # Initial guess function tuned for TurtleBot Burger
+        # This probably the most important function for getting good results
         """v = v0
         theta = theta0
         x = np.zeros((1,length))
@@ -322,12 +331,14 @@ class STLpredicate:
         x = np.vstack((speed,omega))
         x[0,0] = v0
         x[1,0] = omega0
-        #return self.WPFT(x, self.RhoV(x, 'vk', 'pw'), 50, 'vk', 'pw')
+        #return self.WPFT(x, self.RhoV(x, 'ef', 'pw'), 50, 'ef', 'pw')
         return x 
 
     
     def plant(self, vel):
-        # This plant simply computes the speed
+        # This plant simply computes the x and y position
+        # It is currently based on a TurtleBot but the focus is generating the 
+        # additional signals in the signal space
         # First I need to grow the signal space
         x = np.concatenate((np.zeros((2, vel.shape[1])), vel), axis=0)
         theta_t = 0
@@ -339,6 +350,8 @@ class STLpredicate:
         return x
 
     def plot3D(self,xmin, xmax, ymin, ymax, points):
+        # You can think of a predicate as constraining a space
+        # So this function plots in 3D the robustness space
         x = np.array([[],[]])
         for i in np.linspace(xmin,xmax,points):
             for j in np.linspace(ymin, ymax, points):
@@ -359,6 +372,8 @@ class STLpredicate:
         print(self.RhoV(x))
 
     def plotsln3D(self, x, mMT, rbT, s='show'):
+        # This function plots a solution 
+        # and its robustness in 3D
         X = self.plant(x)
         Z = []
         for t in range(0,x.shape[1]):
@@ -443,127 +458,6 @@ class STLpredicate:
 
         return pop[np.argmax(score)]
 
-    def hillClimbingPW(self,xinit, yinit, step, length, mMT, rbT):
-        # Pointwise differential evolution function
-        # That is to say differential evolution is applied
-        # to each point individually
-        pop_size = 10*length 
-        max_iter = 3000 
-
-        # Generate Initial Population
-        pop = []
-        score = []
-        for i in range(pop_size):
-            pop.append(self.x_rw(xinit, yinit, step, length))
-            score.append(self.RhoV(pop[i], mMT, rbT))
-        
-        converged = False
-        pindex = [i for i in range(pop_size)]
-        n = 0
-        while not converged:
-            for candidate in range(pop_size):
-                # Determine Parents Randomly
-                # The same parents are used for all points
-                parents = np.random.permutation(pindex)
-                ii = 0
-                if parents[ii] == i:
-                    ii +=1
-                p1 = parents[ii]
-                ii += 1
-                if parents[ii] == i:
-                    ii +=1
-                p2 = parents[ii]
-                ii += 1
-                if parents[ii] == i:
-                    ii +=1
-                p3 = parents[ii]
-                ii += 1
-
-                # Pick f randomly 
-                f = np.random.ranf()*0.5 + 0.5
-                newCandidate = cp.deepcopy(pop[candidate])
-                for point in range(1,length):
-                    # Generate Test Point
-                    pd = pop[p1][:,point] + f*(pop[p2][:,point] - pop[p3][:,point])
-                    newCandidate[:,point] = newCandidate[:,point] + pd
-                    newCandidateScoreV = self.RhoV(newCandidate, mMT, rbT)
-                    newCandidateScore = self.pmin(newCandidateScoreV, mMT, rbT)
-                    candidateScore = self.pmin(score[candidate], mMT, rbT)
-
-
-                    # Compare Scores
-                    if newCandidateScoreV[point]  > score[candidate][point] and newCandidateScore > candidateScore:
-                        pop[candidate][:,point] = newCandidate[:,point]
-                        score[candidate] = newCandidateScoreV
-                    else:
-                        newCandidate[:,point] = pop[candidate][:,point]
-
-            print('n: ', n, np.mean([min(score[p]) for p in parents]), max((min(score[p]) for p in parents)))
-            if max_iter < n:
-                converged = True
-            n = n + 1
-
-        print('n: ', n, max((min(score[p]) for p in parents)))
-
-        return pop[np.argmax(((min(score[p]) for p in parents)))]
-
-    def WPF(self, xinit, yinit, step, length, mMT, rbT):
-        pop_size = 30*length
-        maxiter = 6000 
-        stall = 0
-        runningBest = 0
-        runningBestRho = -10
-
-        while stall < 3:
-            # Generate Initial Guess 
-            print("Generating a good initial guess")
-            bCand = self.x_rw(xinit, yinit, step, length) 
-            bScore = self.robustness(bCand, mMT, rbT)
-
-            for i in range(1,pop_size):
-                nCand = self.x_rw(xinit, yinit, step, length)
-                nScore = self.robustness(nCand, mMT, rbT)
-                if nScore > bScore:
-                    bCand = nCand
-                    bScore = nScore
-
-            converge = 0 
-            n = 0
-            while converge < 50:
-                # Find the worst point
-                #print('Getting worst point')
-                pv = self.RhoV(bCand, mMT, rbT) # robutness vector
-                imin = np.argmin(pv[1:]) +1 # index of the worst point
-                     
-                # Generate the test vector
-                bCandPoint = cp.deepcopy(bCand)
-                # Generate a potentially better point
-                pointC = 0.1*(np.random.rand(1,2) - 0.5)
-                bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
-                pointSV = self.RhoV(bCandPoint, mMT, rbT)
-
-                while pv[imin] > pointSV[imin] and converge < 50:
-                    bCandPoint  = cp.deepcopy(bCand) # Reset the copy, may need deep cp
-                    pointC = 0.1*(np.random.rand(1,2) - 0.5)
-                    bCandPoint[:, imin] = bCandPoint[:, imin] + pointC
-                    pointSV = self.RhoV(bCandPoint, mMT, rbT)
-                    print('n: ', n, ' Current: ', pv[imin], 'Proposed: ', pointSV[imin])
-                    converge += 1
-                    n += 1
-                if converge < 50:
-                    converge = 0
-                else:
-                    print('Stalled')
-                    break
-                bCand = cp.deepcopy(bCandPoint)
-            stall += 1
-            if runningBestRho < self.robustness(bCand, mMT, rbT):
-                runningBestRho = self.robustness(bCand, mMT, rbT)
-                runningBest = cp.deepcopy(bCand)
-                
-
-        return runningBest 
-
     def TrajOptSSDE(self, xinit, yinit, step, length, mMT, rbT):
         # Black box differential evolution function
         # That uses the sum of the robustness instead
@@ -647,15 +541,21 @@ class STLpredicate:
         elite_i = np.argmax(score)
         print(score[elite_i])
         guess = pop[elite_i]
-        guessflt = np.reshape(guess, (1, -1))[0]
-        opt = minimize(self.cost, guessflt, args=(mMT,rbT),method='L-BFGS-B', bounds=bnds)
+        guessflt = np.reshape(guess[:,1:], (1, -1))
+        options = {'maxiter': 1000}
+        # args = (mMT,rbT)
+        opt = sciOpt.minimize(self.expsum, guessflt,method='SLSQP',options=options)
         #opt = minimize(self.expsum, guessflt, method='TNC', bounds=bnds)
         print(opt.message)
         return np.reshape(opt.x, (2,-1))
 
-    def VanillaMin(self, xinit, yinit, x0, mMT='vk', rbT='n', mthd='SLSQP'):
+    def VanillaMin(self, xinit, yinit, x0, mMT='ef', rbT='n', mthd='SLSQP'):
+        # Generic single valued cost function optimization
+
+        # Depending on your plant you may need to force bounds at particular points
+        # See the commented out parts here and the bounds function or some example work
         #bnds = self.bounds(xinit, yinit, length)
-        self.k = 10 
+        self.k = 10 # For some reason this function likes to overflow so smaller k and alpha
         self.alpha = 10 
         guessflt = np.reshape(x0[:,1:], (1, -1))
         options = {'maxiter': 1000}
@@ -696,6 +596,7 @@ class STLpredicate:
         return pop
 
     def mutateAgent(self, agent, popscore, length):
+        # The mutation function for the genetic optimization
         for j in range(1, length):
             #agent[:,j] = agent[:,j] + 0.01*abs(10 - popscore[i][j])*(np.random.ranf() -0.5)
             agent[:,j] = agent[:,j] + 0.3*(np.random.ranf((1,2)) -0.5)
@@ -703,6 +604,7 @@ class STLpredicate:
 
 
     def reproduce(self, pop, popscore, p1, p2, length):
+        # The function for making children in genetic evolution optimization
         child1 = np.empty((2,length)) 
         child2 = np.empty((2,length)) 
         for index in range(0, length):
@@ -726,6 +628,7 @@ class STLpredicate:
         return [child1, child2]
 
     def WPFT(self, agent, agentScoreV, n, mMT, rbT):
+        # The modified Worst Point First Optimizer for genetic optimization
         j = 0
         agentcp = cp.deepcopy(agent)
         imin = np.argmin(agentScoreV[1:])
@@ -803,7 +706,10 @@ class STLpredicate:
         return pop[pIndices[-1]]
 
     def saveRes(self, sln, mMT, rbT, PATH = './results/'):
-        #print('rbT: ' + rbT)
+        # Save the results of a test to a file
+        # Should modify the prints to match your scenario of interest
+
+        # Make sure that filename is unique
         datestamp = str(datetime.date.today())
         path = PATH + datestamp + '/'
         # Create target directory & all intermediate directories if don't exists
@@ -830,6 +736,7 @@ class STLpredicate:
         self.plotsln3D(sln, mMT, rbT, path + 'outputGraphs' + timestamp)
 
     def rectPtch(x1, x2, y1, y2, color='red'): 
+        # Defines a patch object for easy plotting
         return plt.Rectangle((x1,y1), x2-x1, y2-y1, color=color, alpha=0.5)
 
 if __name__ == '__main__':
@@ -844,9 +751,7 @@ if __name__ == '__main__':
 
     test = 'n' #'simp' for simple, 'n' for number of time steps test. 'p' for disjuction predicate test
     op = 'op' # 'op' for optimize, 'dbg' for debug, 'dbghc' for debug hardcore
-    optp = 'gen' # vk, agm, lse, gen
-
-    # Some predicates based on these points
+    optp = 'gen' # ef, agm, lse, gen
 
     # P-test Predicates
     pobs1 = ~STLpredicate.rect(t1,t2, 'a', 0.5, 1, 0.5, 1)
@@ -868,6 +773,8 @@ if __name__ == '__main__':
     pgoal1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
 
     goal1p = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
+
+    # Complete P-Test predicates
     p = pobs1*pobs2*pobs3*pgoal1*(pgas1 + pgas2 + pgas3)
 
     # N-test Predicates
@@ -882,7 +789,7 @@ if __name__ == '__main__':
     rg1 = STLpredicate.rect(t1,t2, 'e', 1.5, 2, 1.5, 2)
     goal1n = STLpredicate.rectPtch(1.5, 2, 1.5, 2, 'green')
 
-    # Complete Scenario
+    # Complete N-test Scenario
     n = rob1*rob2*rob3*rg1
 
     # Simple Test Predicates
@@ -894,10 +801,10 @@ if __name__ == '__main__':
     
     sp = spobs*spgoal
 
-    # Dynamics
+    # Dynamics: Currently for TurtleBot Burger
     r3 = STLpredicate(t1,t2, 'a', np.array([0,0,1,0]), 0.22)
     r4 = STLpredicate(t1,t2, 'a', np.array([0,0,0,1]), 2.84)
-    r5 = STLpredicate(t1,t2, 'a', np.array([0,0,-1,0]), 0.1)
+    r5 = STLpredicate(t1,t2, 'a', np.array([0,0,-1,0]), 0.1) # to prevent reversing
     r6 = STLpredicate(t1,t2, 'a', np.array([0,0,0,-1]), 2.84)
     d = r3*r4*r5*r6
 
@@ -917,7 +824,7 @@ if __name__ == '__main__':
     if op == 'op':
         if optp == 'gen':
             rbT = 'pw'
-            mMT = 'vk'
+            mMT = 'ef'
             print('Beginning Genetic Optimization. mMT: ', mMT, ' rbT: ', rbT)
             start = time.time()
             sln1 = q.geneticEvo(0,0,step,length, mMT, rbT)
@@ -925,24 +832,25 @@ if __name__ == '__main__':
             sln = q.VanillaMin(0,0,sln1)
             stop = time.time()
         
-        elif optp == 'vk':
+        elif optp == 'ef':
             rbT = 'n'
-            mMT = 'vk'
+            mMT = 'ef'
             print('Beginning SLSQP Optimization. mMT: ', mMT, ' rbT: ', rbT)
             start = time.time()
             sln1 = q.x_rw(0,0,step,length)
             sln = q.VanillaMin(0,0,sln1, mMT=mMT, rbT=rbT, mthd='SLSQP')
             stop = time.time()
 
-        elif optp == 'agm':
-            rbT = 'n'
-            mMT = 'ag'
-            print('Beginning AGM-SLSQP Optimization. mMT: ', mMT, ' rbT: ', rbT)
-            start = time.time()
-            sln1 = q.x_rw(0,0,step,length)
-            sln = q.VanillaMin(0,0,sln1, mMT=mMT, rbT=rbT, mthd='SLSQP')
-            stop = time.time()
-            print(q.robustness(sln, 'n', 'ag'))
+        # AGM optimization: again this doesn't quite work
+        #elif optp == 'agm':
+        #    rbT = 'n'
+        #    mMT = 'ag'
+        #    print('Beginning AGM-SLSQP Optimization. mMT: ', mMT, ' rbT: ', rbT)
+        #    start = time.time()
+        #    sln1 = q.x_rw(0,0,step,length)
+        #    sln = q.VanillaMin(0,0,sln1, mMT=mMT, rbT=rbT, mthd='SLSQP')
+        #    stop = time.time()
+        #    print(q.robustness(sln, 'n', 'ag'))
 
         elif optp == 'lse':
             rbT = 'n'
@@ -963,12 +871,14 @@ if __name__ == '__main__':
         fid.close()
 
     elif op == 'dbg':
+        # Debug mode pulls the previous trajectory from file. Its a huge timesaver.
         start = 0
         stop = 0
         sln = np.fromfile('./sln.txt')
         sln = sln.reshape((2,-1))
     
     elif op =='dbghc':
+        # Hard Core debug mode uses a simple trajectory so you can probe specific elements
         start = 0
         stop = 0
         spd = 0.22*np.ones((1,length))
@@ -996,8 +906,6 @@ if __name__ == '__main__':
         print((pgoal1.RhoV(sln, 'n', rbT)))
         print('Combined Robustness Vector Normal')
         print(q.RhoV(sln, 'n', rbT))
-        #q.plotsln3D(sln, mMT=mMT, rbT=rbT)
-        #q.saveRes(sln, mMT=mMT, rbT=rbT)
         
         fix, ax = plt.subplots(1)
         ax.set_xlim((-1,2))
@@ -1047,8 +955,7 @@ if __name__ == '__main__':
 
         ax.add_patch(goal1n)
         ax.plot(slnCmplt[0,:],slnCmplt[1,:], linestyle='-', marker="o")
-        #ax.axes.get_xaxis().set_visible(True)
-        #ax.axes.get_yaxis().set_visible(True)
+
         plt.title('Time Step Test, N=' + str(length))
         plt.xlabel('x')
         plt.ylabel('y')
@@ -1076,8 +983,7 @@ if __name__ == '__main__':
         ax.add_patch(spgoalp)
 
         ax.plot(slnCmplt[0,:],slnCmplt[1,:], linestyle='-', marker="o")
-        #ax.axes.get_xaxis().set_visible(True)
-        #ax.axes.get_yaxis().set_visible(True)
+
         plt.title('Simple-Test')
         plt.xlabel('x')
         plt.ylabel('y')
