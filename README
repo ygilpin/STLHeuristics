@@ -1,6 +1,8 @@
 This repository contains the work of a senior design project.
 The main focus is on task and motion planning based on Signal Temporal
-Logic Constraints. 
+Logic Constraints. Its main contribution is a pointwise robustness defintion
+and a hybrid genetic optimization technique. For further details on the novel 
+approaches implemented in this project see the final reports from each semester.
 
 The bulk of the code is the file: STLpredicate.py, which consists of two big pieces.
 1) This is the STLpredicate class which implements, traditional STL robustness along with a few
@@ -9,34 +11,37 @@ other optimization techniques.
 
 How does STLpredicate.py work?
 It is contains three main pieces. First there are constructor functions that create and combine
-STLpredicate objects into a specification. I overwrote the * and + operators for convenience in
-this aspect. 
+STLpredicate objects into a specification. I overwrote the -,*, and + operators for convenience.
+
 The next piece is robustness fucntions. They work together to recursively determine the
 robustness of a particular trajectory with respect to a particular predicate. Since often there
 are dynamic constraints that must be computed from the control trajectory the robustness
 computation also uses a plant to generate the additional signal trajectories. Currently the
-plant is set to have differential drive dynamics to mimic a TurtleBot Burger. 
-The last piece is optimization and result logging functions. These simply take a predicate
-generate some initial trajectories and optimize to try and find the best result. The logging
+plant is set to have differential drive dynamics to mimic a TurtleBot Burger.
+
+The last piece is optimization and result logging functions. These simply take a predicate,
+generate some initial trajectories, and optimize to try and find the best result. The logging
 and plotting functions do as you would expect though they should be adapted to your situation.
 
 How to simulate the results in Gazebo?
 This example was written with ROS 1 following the instructions on the TurtleBot tutorial
-online.
-For a simple predicate, I made a world, a node and a couple launch file. It appears that these files
-need to put in the appropriate places for ROS to be able to find everything. 
+online, which is the first step.
+
+For a simple specification (in the STLpredicate.py as simple), I made a world, a node and a couple launch file. 
+It appears that these files need to put in the appropriate places for ROS to be able to find everything. 
 turtlebot3_opt_world.launch needs to be with the other world.launch files
 (/catkin_ws/src/turtlebot3_simulations/turtlebot3_gazebo/launch). Similarly the world
 file belongs in /catkin_ws/src/turtlebot3_simulations/turtlebot3_gazebo/worlds). The
 turtlebot3_teleop_pp.launch should be in /catkin_ws/src/turtlebot3_teleop/launch. 
 
 The process works in two steps. First you run STLpredicate.py to generate a good solution. This is saved in a file
-called sln.txt. Next you run the roslaunch file to open the world and spawn a robot at (0,0)
-that is: turtlebot3_opt_world.launch.
-Lastly you execute the trajectory by running the roslaunch command, turtlebot3_teleop_pp.launch that runs the node which
-will read the file: sln.txt. Note you must update the path hardcoded in the node or else it will not be able to find
+called sln.txt. 
+
+Secondly, you run the roslaunch file to open the world and spawn a robot at (0,0)
+that is: turtlebot3_opt_world.launch. Next you execute the trajectory by running the turtlebot3_teleop_pp.launch
+which will read and execute the trajectory in the file: sln.txt. 
+Note you must update the path hardcoded in the node file or else it will not be able to find
 the trajectory. Furthermore you will notice that it can call STLpredicate.py and obtain the
 solution all at once. This works, but is not recommended unless you have a powerful
 computer (optimization takes a lot of computational power). 
 
-For further details on how novel approaches implemented in this project see the final reports from each semester.
